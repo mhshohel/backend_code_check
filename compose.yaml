@@ -1,0 +1,23 @@
+# Local infrastructure for order-fulfillment-lab.
+# PostgreSQL runs on the host (see .env.example). Only Elasticsearch runs here.
+name: ofl
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.2.4
+    container_name: ofl-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false   # local development only
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - action.destructive_requires_name=false
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - ofl-es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+volumes:
+  ofl-es-data:

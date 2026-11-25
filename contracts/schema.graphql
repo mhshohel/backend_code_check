@@ -1,0 +1,737 @@
+"""
+Order Fulfillment Lab GraphQL contract.
+
+This file is the single source of truth. All three implementations serve it
+unchanged, and TypeScript types are generated from it (packages/graphql-types).
+
+Error model:
+- Expected business outcomes are union members that implement DomainError
+  (for example InsufficientStock). Clients switch on __typename.
+- Cross-cutting failures are GraphQL errors with extensions.code:
+  UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, BAD_USER_INPUT (with
+  extensions.fieldErrors), QUERY_TOO_COMPLEX, SEARCH_UNAVAILABLE,
+  RATE_LIMITED, INTERNAL_SERVER_ERROR.
+"""
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}
+
+"ISO-8601 timestamp in UTC, for example 2026-11-25T10:00:00.000Z."
+scalar DateTime
+
+enum Role {
+  CUSTOMER
+  OPERATOR
+  ADMIN
+}
+
+"Money in integer minor units (cents). The lab uses one currency: USD."
+type Money {
+  amountMinor: Int!
+  currency: String!
+  "Display string such as $12.50. Formatting only; never parse it."
+  formatted: String!
+}
+
+type User {
+  id: ID!
+  email: String!
+  displayName: String!
+  role: Role!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  endCursor: String
+}
+
+interface DomainError {
+  code: String!
+  message: String!
+}
+
+# ---------------------------------------------------------------------------
+# Catalog
+# ---------------------------------------------------------------------------
+
+type Category {
+  id: ID!
+  slug: String!
+  name: String!
+}
+
+type Warehouse {
+  id: ID!
+  code: String!
+  name: String!
+}
+
+type Product {
+  id: ID!
+  slug: String!
+  name: String!
+  description: String!
+  category: Category!
+  skus: [Sku!]!
+  "Lowest active SKU price."
+  fromPrice: Money!
+  "Sum of available units across all SKUs and warehouses (PostgreSQL, authoritative)."
+  availableQuantity: Int!
+}
+
+type Sku {
+  id: ID!
+  code: String!
+  label: String!
+  price: Money!
+  product: Product!
+  "Per-warehouse availability. Read from PostgreSQL."
+  stock: [StockLevel!]!
+  availableQuantity: Int!
+}
+
+type StockLevel {
+  warehouse: Warehouse!
+  onHand: Int!
+  reserved: Int!
+  available: Int!
+}
+
+# ---------------------------------------------------------------------------
+# Search (Elasticsearch, eventually consistent)
+# ---------------------------------------------------------------------------
+
+enum ProductSort {
+  RELEVANCE
+  PRICE_ASC
+  PRICE_DESC
+  NEWEST
+}
+
+input ProductSearchInput {
+  "Free text. Empty means match all."
+  text: String
+  categorySlugs: [String!]
+  "Inclusive."
+  minPriceMinor: Int
+  "Exclusive."
+  maxPriceMinor: Int
+  inStockOnly: Boolean
+  sort: ProductSort = RELEVANCE
+}
+
+type ProductSearchHit {
+  productId: ID!
+  slug: String!
+  name: String!
+  categorySlug: String!
+  categoryName: String!
+  fromPrice: Money!
+  "Snapshot from the search index. Checkout always rechecks PostgreSQL."
+  inStock: Boolean!
+  score: Float
+}
+
+type ProductSearchEdge {
+  cursor: String!
+  node: ProductSearchHit!
+}
+
+"""
+Facet bucket. value formats (stable contract):
+- categories: the category slug.
+- priceRanges: "<minMinor>-<maxMinor>" in integer minor units, min inclusive,
+  max exclusive, max empty when open-ended. Buckets: "0-2500", "2500-5000",
+  "5000-10000", "10000-25000", "25000-". Clients map a selection to
+  minPriceMinor / maxPriceMinor (maxPriceMinor is exclusive).
+- availability: "in_stock" | "out_of_stock". "in_stock" maps to inStockOnly: true.
+"""
+type FacetBucket {
+  value: String!
+  label: String!
+  count: Int!
+  selected: Boolean!
+}
+
+"""
+Facet counts. For each dimension, counts apply every active filter except
+the filter of that same dimension (disjunctive faceting), so users can see
+how many results another choice in the same group would give.
+"""
+type SearchFacets {
+  categories: [FacetBucket!]!
+  priceRanges: [FacetBucket!]!
+  availability: [FacetBucket!]!
+}
+
+type ProductSearchConnection {
+  edges: [ProductSearchEdge!]!
+  pageInfo: PageInfo!
+  "Exact up to 10000, then a lower bound."
+  totalCount: Int!
+  facets: SearchFacets!
+}
+
+type ProductSuggestion {
+  productId: ID!
+  slug: String!
+  name: String!
+}
+
+# ---------------------------------------------------------------------------
+# Orders
+# ---------------------------------------------------------------------------
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  PARTIALLY_SHIPPED
+  SHIPPED
+  CANCELLED
+}
+
+enum CancellationReason {
+  CUSTOMER_REQUEST
+  PAYMENT_DECLINED
+  RESERVATION_EXPIRED
+  OPERATOR_REQUEST
+}
+
+enum ReservationStatus {
+  ACTIVE
+  CONFIRMED
+  SHIPPED
+  RELEASED
+}
+
+enum PaymentStatus {
+  PENDING
+  CAPTURED
+  DECLINED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum ReturnStatus {
+  REQUESTED
+  RECEIVED
+  REFUNDED
+}
+
+type Order {
+  id: ID!
+  "Human-readable number, for example ORD-100042."
+  number: String!
+  status: OrderStatus!
+  cancellationReason: CancellationReason
+  customer: User!
+  lines: [OrderLine!]!
+  subtotal: Money!
+  total: Money!
+  reservationExpiresAt: DateTime!
+  reservations: [Reservation!]!
+  payment: Payment
+  shipments: [Shipment!]!
+  returns: [Return!]!
+  "Computed on the server from the order state and the viewer's role."
+  allowedActions: OrderActions!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type OrderActions {
+  canCancel: Boolean!
+  canRequestReturn: Boolean!
+  "Warehouses that have confirmed, unshipped reservations (operators only)."
+  shippableWarehouses: [Warehouse!]!
+  "Returns in REQUESTED status that the viewer may receive (operators only; empty for customers)."
+  receivableReturnIds: [ID!]!
+}
+
+type OrderLine {
+  id: ID!
+  lineNumber: Int!
+  sku: Sku!
+  productName: String!
+  skuCode: String!
+  quantity: Int!
+  unitPrice: Money!
+  lineTotal: Money!
+  shippedQuantity: Int!
+  returnedQuantity: Int!
+  "shippedQuantity minus quantity on returns (any status)."
+  returnableQuantity: Int!
+}
+
+type Reservation {
+  id: ID!
+  sku: Sku!
+  warehouse: Warehouse!
+  quantity: Int!
+  status: ReservationStatus!
+  expiresAt: DateTime!
+}
+
+type Payment {
+  id: ID!
+  status: PaymentStatus!
+  amount: Money!
+  refunded: Money!
+  declineReason: String
+}
+
+type Shipment {
+  id: ID!
+  warehouse: Warehouse!
+  trackingCode: String!
+  shippedAt: DateTime!
+  lines: [ShipmentLine!]!
+}
+
+type ShipmentLine {
+  orderLineId: ID!
+  skuCode: String!
+  quantity: Int!
+}
+
+type Return {
+  id: ID!
+  status: ReturnStatus!
+  reason: String!
+  refund: Money!
+  lines: [ReturnLine!]!
+  createdAt: DateTime!
+  receivedAt: DateTime
+  refundedAt: DateTime
+}
+
+type ReturnLine {
+  orderLineId: ID!
+  skuCode: String!
+  warehouse: Warehouse!
+  quantity: Int!
+}
+
+type OrderEdge {
+  cursor: String!
+  node: Order!
+}
+
+type OrderConnection {
+  edges: [OrderEdge!]!
+  pageInfo: PageInfo!
+}
+
+input OrderFilter {
+  status: [OrderStatus!]
+  "Operators only: orders with confirmed, unshipped reservations in this warehouse."
+  awaitingShipmentFromWarehouseId: ID
+  "Operators only: orders with at least one return in REQUESTED status."
+  withReturnsAwaitingReceipt: Boolean
+}
+
+# ---------------------------------------------------------------------------
+# Inventory
+# ---------------------------------------------------------------------------
+
+enum InventoryMovementKind {
+  RECEIPT
+  RESERVE
+  RELEASE
+  SHIP
+  RETURN_RESTOCK
+  ADJUSTMENT
+}
+
+type InventoryBalance {
+  sku: Sku!
+  warehouse: Warehouse!
+  onHand: Int!
+  reserved: Int!
+  available: Int!
+  updatedAt: DateTime!
+}
+
+type InventoryBalanceEdge {
+  cursor: String!
+  node: InventoryBalance!
+}
+
+type InventoryBalanceConnection {
+  edges: [InventoryBalanceEdge!]!
+  pageInfo: PageInfo!
+}
+
+type InventoryMovement {
+  id: ID!
+  sku: Sku!
+  warehouse: Warehouse!
+  kind: InventoryMovementKind!
+  onHandDelta: Int!
+  reservedDelta: Int!
+  referenceType: String
+  referenceId: ID
+  reason: String
+  actor: User
+  createdAt: DateTime!
+}
+
+type InventoryMovementEdge {
+  cursor: String!
+  node: InventoryMovement!
+}
+
+type InventoryMovementConnection {
+  edges: [InventoryMovementEdge!]!
+  pageInfo: PageInfo!
+}
+
+# ---------------------------------------------------------------------------
+# Operations (administrator)
+# ---------------------------------------------------------------------------
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+type Job {
+  id: ID!
+  topic: String!
+  aggregateType: String!
+  aggregateId: String!
+  status: JobStatus!
+  attempts: Int!
+  maxAttempts: Int!
+  lastError: String
+  availableAt: DateTime!
+  createdAt: DateTime!
+}
+
+type JobEdge {
+  cursor: String!
+  node: Job!
+}
+
+type JobConnection {
+  edges: [JobEdge!]!
+  pageInfo: PageInfo!
+}
+
+type OrderStatusCount {
+  status: OrderStatus!
+  count: Int!
+}
+
+type DailyRevenue {
+  "UTC date, YYYY-MM-DD."
+  day: String!
+  orders: Int!
+  revenue: Money!
+  "Running total across the reported window (window function)."
+  cumulativeRevenue: Money!
+}
+
+type LowStockItem {
+  sku: Sku!
+  warehouse: Warehouse!
+  available: Int!
+}
+
+type OperationsSummary {
+  ordersByStatus: [OrderStatusCount!]!
+  dailyRevenue(days: Int = 14): [DailyRevenue!]!
+  lowStock(threshold: Int = 5, limit: Int = 20): [LowStockItem!]!
+  pendingJobs: Int!
+  failedJobs: Int!
+  "Age in seconds of the oldest claimable job; 0 when the backlog is empty."
+  oldestPendingJobAgeSeconds: Int!
+  expiredActiveReservations: Int!
+}
+
+type AuditEntry {
+  id: ID!
+  actor: User
+  action: String!
+  entityType: String!
+  entityId: String!
+  details: String!
+  correlationId: String
+  createdAt: DateTime!
+}
+
+type AuditEntryEdge {
+  cursor: String!
+  node: AuditEntry!
+}
+
+type AuditEntryConnection {
+  edges: [AuditEntryEdge!]!
+  pageInfo: PageInfo!
+}
+
+# ---------------------------------------------------------------------------
+# Queries
+# ---------------------------------------------------------------------------
+
+type Query {
+  "Null when not signed in."
+  viewer: User
+
+  categories: [Category!]!
+  warehouses: [Warehouse!]!
+  product(slug: String!): Product
+  "Elasticsearch. first is limited to 1..50."
+  searchProducts(input: ProductSearchInput, first: Int = 20, after: String): ProductSearchConnection!
+  "Elasticsearch autocomplete. limit is limited to 1..10."
+  productSuggestions(prefix: String!, limit: Int = 5): [ProductSuggestion!]!
+
+  "Owner, operator, or administrator. NOT_FOUND for other customers."
+  order(id: ID!): Order
+  "Orders of the signed-in customer, newest first. first is limited to 1..50."
+  myOrders(first: Int = 20, after: String, filter: OrderFilter): OrderConnection!
+  "Operator or administrator. All orders, newest first."
+  orders(first: Int = 20, after: String, filter: OrderFilter): OrderConnection!
+
+  "Operator or administrator."
+  inventory(warehouseId: ID, lowStockOnly: Boolean = false, first: Int = 20, after: String): InventoryBalanceConnection!
+  "Operator or administrator. Newest first."
+  inventoryMovements(skuId: ID!, warehouseId: ID, first: Int = 20, after: String): InventoryMovementConnection!
+
+  "Administrator."
+  operationsSummary: OperationsSummary!
+  "Administrator."
+  jobs(status: JobStatus = FAILED, first: Int = 20, after: String): JobConnection!
+  "Administrator."
+  auditLog(first: Int = 20, after: String): AuditEntryConnection!
+}
+
+# ---------------------------------------------------------------------------
+# Mutations
+# ---------------------------------------------------------------------------
+
+input CheckoutLineInput {
+  skuId: ID!
+  quantity: Int!
+  "The price the customer saw. A mismatch returns PriceChanged."
+  expectedUnitPriceMinor: Int!
+}
+
+input CheckoutInput {
+  "Client-generated. Retries with the same key return the same result."
+  idempotencyKey: String!
+  lines: [CheckoutLineInput!]!
+  "Simulated card token: tok_approve, tok_decline, or tok_slow_approve."
+  paymentToken: String!
+}
+
+type CheckoutSucceeded {
+  order: Order!
+  "True when this response replays an earlier request with the same key."
+  replayed: Boolean!
+}
+
+type InsufficientStockLine {
+  skuId: ID!
+  requested: Int!
+  available: Int!
+}
+
+type InsufficientStock implements DomainError {
+  code: String!
+  message: String!
+  lines: [InsufficientStockLine!]!
+}
+
+type PriceChangedLine {
+  skuId: ID!
+  expectedUnitPriceMinor: Int!
+  currentUnitPrice: Money!
+}
+
+type PriceChanged implements DomainError {
+  code: String!
+  message: String!
+  lines: [PriceChangedLine!]!
+}
+
+type IdempotencyKeyReused implements DomainError {
+  code: String!
+  message: String!
+}
+
+union CheckoutResult = CheckoutSucceeded | InsufficientStock | PriceChanged | IdempotencyKeyReused
+
+type OrderCancelled {
+  order: Order!
+}
+
+type OrderNotCancellable implements DomainError {
+  code: String!
+  message: String!
+  status: OrderStatus!
+}
+
+union CancelOrderResult = OrderCancelled | OrderNotCancellable
+
+input ShipOrderInput {
+  orderId: ID!
+  warehouseId: ID!
+  trackingCode: String
+}
+
+type ShipmentCreated {
+  shipment: Shipment!
+  order: Order!
+}
+
+type NothingToShip implements DomainError {
+  code: String!
+  message: String!
+}
+
+type OrderNotShippable implements DomainError {
+  code: String!
+  message: String!
+  status: OrderStatus!
+}
+
+union ShipOrderResult = ShipmentCreated | NothingToShip | OrderNotShippable
+
+input ReturnLineInput {
+  orderLineId: ID!
+  quantity: Int!
+}
+
+input RequestReturnInput {
+  orderId: ID!
+  reason: String!
+  lines: [ReturnLineInput!]!
+}
+
+type ReturnRequested {
+  return: Return!
+  order: Order!
+}
+
+type ReturnQuantityExceededLine {
+  orderLineId: ID!
+  requested: Int!
+  returnable: Int!
+}
+
+type ReturnQuantityExceeded implements DomainError {
+  code: String!
+  message: String!
+  lines: [ReturnQuantityExceededLine!]!
+}
+
+type OrderNotReturnable implements DomainError {
+  code: String!
+  message: String!
+  status: OrderStatus!
+}
+
+union RequestReturnResult = ReturnRequested | ReturnQuantityExceeded | OrderNotReturnable
+
+type ReturnReceived {
+  return: Return!
+  order: Order!
+}
+
+type ReturnNotReceivable implements DomainError {
+  code: String!
+  message: String!
+  status: ReturnStatus!
+}
+
+union ReceiveReturnResult = ReturnReceived | ReturnNotReceivable
+
+enum StockChangeKind {
+  RECEIPT
+  ADJUSTMENT
+}
+
+input AdjustInventoryInput {
+  skuId: ID!
+  warehouseId: ID!
+  kind: StockChangeKind!
+  "RECEIPT requires a positive value. ADJUSTMENT can be negative (shrinkage, damage)."
+  quantityDelta: Int!
+  reason: String!
+}
+
+type InventoryAdjusted {
+  balance: InventoryBalance!
+  movement: InventoryMovement!
+}
+
+type AdjustmentRejected implements DomainError {
+  code: String!
+  message: String!
+  onHand: Int!
+  reserved: Int!
+}
+
+union AdjustInventoryResult = InventoryAdjusted | AdjustmentRejected
+
+input UpdateSkuPriceInput {
+  skuId: ID!
+  priceMinor: Int!
+}
+
+type SkuPriceUpdated {
+  sku: Sku!
+}
+
+union UpdateSkuPriceResult = SkuPriceUpdated
+
+type JobRetried {
+  job: Job!
+}
+
+type JobNotRetryable implements DomainError {
+  code: String!
+  message: String!
+  status: JobStatus!
+}
+
+union RetryJobResult = JobRetried | JobNotRetryable
+
+type Mutation {
+  "Customer. Validates prices, reserves stock atomically, starts simulated payment."
+  checkout(input: CheckoutInput!): CheckoutResult!
+  "Owner (PENDING_PAYMENT or CONFIRMED, no shipments) or operator."
+  cancelOrder(orderId: ID!): CancelOrderResult!
+  "Operator. Ships every confirmed reservation of the order in one warehouse."
+  shipOrder(input: ShipOrderInput!): ShipOrderResult!
+  "Owner. Partial returns are allowed up to the shipped, not yet returned quantity."
+  requestReturn(input: RequestReturnInput!): RequestReturnResult!
+  "Operator. Restocks returned units once and starts the simulated refund."
+  receiveReturn(returnId: ID!): ReceiveReturnResult!
+  "Operator."
+  adjustInventory(input: AdjustInventoryInput!): AdjustInventoryResult!
+  "Administrator."
+  updateSkuPrice(input: UpdateSkuPriceInput!): UpdateSkuPriceResult!
+  "Administrator. Moves a FAILED job back to PENDING."
+  retryJob(jobId: ID!): RetryJobResult!
+}
+
+# ---------------------------------------------------------------------------
+# Subscriptions (graphql-ws protocol over WebSocket)
+# ---------------------------------------------------------------------------
+
+type OrderStatusEvent {
+  "Always re-read from PostgreSQL after the notification."
+  order: Order!
+  occurredAt: DateTime!
+}
+
+type Subscription {
+  "Owner, operator, or administrator. Emits the current order once on subscribe, then on every change."
+  orderUpdated(orderId: ID!): OrderStatusEvent!
+}

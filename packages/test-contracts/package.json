@@ -1,0 +1,32 @@
+{
+  "name": "@ofl/test-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint src tests",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@jest/globals": "30.5.2",
+    "@ofl/domain": "workspace:*",
+    "@ofl/graphql-types": "workspace:*",
+    "@ofl/server-core": "workspace:*",
+    "@ofl/test-fixtures": "workspace:*",
+    "graphql": "17.1.0",
+    "graphql-ws": "6.4.3",
+    "pg": "8.23.1",
+    "ws": "8.23.0",
+    "@node-rs/argon2": "2.2.2",
+    "@graphql-typed-document-node/core": "3.2.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "@types/ws": "8.18.2"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "@ofl/web-spa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint src tests",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ofl/domain": "workspace:*",
+    "@ofl/graphql-types": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "@reduxjs/toolkit": "2.15.0",
+    "react-redux": "9.3.1",
+    "urql": "5.0.4",
+    "@urql/core": "6.0.3",
+    "graphql-ws": "6.4.3",
+    "graphql": "17.1.0",
+    "react-router": "8.5.3"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "8.0.0",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.13",
+    "@types/react": "19.3.2",
+    "@types/react-dom": "19.3.0",
+    "jest-environment-jsdom": "30.5.2",
+    "wonka": "6.3.6"
+  }
+}

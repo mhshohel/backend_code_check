@@ -1,0 +1,60 @@
+query Viewer {
+  viewer { id email displayName role }
+}
+
+query Categories {
+  categories { id slug name }
+}
+
+query Warehouses {
+  warehouses { ...WarehouseFields }
+}
+
+query SearchProducts($input: ProductSearchInput, $first: Int, $after: String) {
+  searchProducts(input: $input, first: $first, after: $after) {
+    totalCount
+    edges {
+      cursor
+      node {
+        productId
+        slug
+        name
+        categorySlug
+        categoryName
+        fromPrice { ...MoneyFields }
+        inStock
+        score
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+    facets {
+      categories { value label count selected }
+      priceRanges { value label count selected }
+      availability { value label count selected }
+    }
+  }
+}
+
+query ProductSuggestions($prefix: String!, $limit: Int) {
+  productSuggestions(prefix: $prefix, limit: $limit) { productId slug name }
+}
+
+query ProductDetail($slug: String!) {
+  product(slug: $slug) {
+    id
+    slug
+    name
+    description
+    category { id slug name }
+    fromPrice { ...MoneyFields }
+    availableQuantity
+    skus {
+      id
+      code
+      label
+      price { ...MoneyFields }
+      availableQuantity
+      stock { warehouse { ...WarehouseFields } onHand reserved available }
+    }
+  }
+}

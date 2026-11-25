@@ -1,0 +1,14 @@
+{
+  "name": "@ofl/domain",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint src tests",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": { "zod": "4.6.7" }
+}

@@ -1,0 +1,82 @@
+query OperatorOrders($first: Int, $after: String, $filter: OrderFilter) {
+  orders(first: $first, after: $after, filter: $filter) {
+    edges {
+      cursor
+      node {
+        ...OrderSummaryFields
+        customer { id email displayName }
+        lines { id skuCode quantity shippedQuantity }
+        reservations { id quantity status warehouse { ...WarehouseFields } sku { id code } }
+        allowedActions { canCancel shippableWarehouses { ...WarehouseFields }
+    receivableReturnIds }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+mutation ShipOrder($input: ShipOrderInput!) {
+  shipOrder(input: $input) {
+    __typename
+    ... on ShipmentCreated { shipment { id trackingCode warehouse { ...WarehouseFields } } order { ...OrderDetailFields } }
+    ... on NothingToShip { code message }
+    ... on OrderNotShippable { code message status }
+  }
+}
+
+mutation ReceiveReturn($returnId: ID!) {
+  receiveReturn(returnId: $returnId) {
+    __typename
+    ... on ReturnReceived { return { id status } order { ...OrderDetailFields } }
+    ... on ReturnNotReceivable { code message status }
+  }
+}
+
+query Inventory($warehouseId: ID, $lowStockOnly: Boolean, $first: Int, $after: String) {
+  inventory(warehouseId: $warehouseId, lowStockOnly: $lowStockOnly, first: $first, after: $after) {
+    edges {
+      cursor
+      node {
+        onHand
+        reserved
+        available
+        updatedAt
+        warehouse { ...WarehouseFields }
+        sku { id code label product { name slug } }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+query InventoryMovements($skuId: ID!, $warehouseId: ID, $first: Int, $after: String) {
+  inventoryMovements(skuId: $skuId, warehouseId: $warehouseId, first: $first, after: $after) {
+    edges {
+      cursor
+      node {
+        id
+        kind
+        onHandDelta
+        reservedDelta
+        referenceType
+        referenceId
+        reason
+        createdAt
+        actor { id displayName }
+        warehouse { ...WarehouseFields }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+mutation AdjustInventory($input: AdjustInventoryInput!) {
+  adjustInventory(input: $input) {
+    __typename
+    ... on InventoryAdjusted {
+      balance { onHand reserved available updatedAt warehouse { ...WarehouseFields } sku { id code } }
+      movement { id kind onHandDelta reservedDelta reason createdAt }
+    }
+    ... on AdjustmentRejected { code message onHand reserved }
+  }
+}

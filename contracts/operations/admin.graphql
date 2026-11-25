@@ -1,0 +1,40 @@
+query OperationsSummary($days: Int, $threshold: Int) {
+  operationsSummary {
+    ordersByStatus { status count }
+    dailyRevenue(days: $days) { day orders revenue { ...MoneyFields } cumulativeRevenue { ...MoneyFields } }
+    lowStock(threshold: $threshold) { available sku { id code label } warehouse { ...WarehouseFields } }
+    pendingJobs
+    failedJobs
+    oldestPendingJobAgeSeconds
+    expiredActiveReservations
+  }
+}
+
+query Jobs($status: JobStatus, $first: Int, $after: String) {
+  jobs(status: $status, first: $first, after: $after) {
+    edges { cursor node { id topic aggregateType aggregateId status attempts maxAttempts lastError availableAt createdAt } }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+mutation RetryJob($jobId: ID!) {
+  retryJob(jobId: $jobId) {
+    __typename
+    ... on JobRetried { job { id status attempts } }
+    ... on JobNotRetryable { code message status }
+  }
+}
+
+query AuditLog($first: Int, $after: String) {
+  auditLog(first: $first, after: $after) {
+    edges { cursor node { id action entityType entityId details correlationId createdAt actor { id displayName } } }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+mutation UpdateSkuPrice($input: UpdateSkuPriceInput!) {
+  updateSkuPrice(input: $input) {
+    __typename
+    ... on SkuPriceUpdated { sku { id code price { ...MoneyFields } } }
+  }
+}

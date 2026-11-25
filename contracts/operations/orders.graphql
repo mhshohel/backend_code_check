@@ -1,0 +1,44 @@
+mutation Checkout($input: CheckoutInput!) {
+  checkout(input: $input) {
+    __typename
+    ... on CheckoutSucceeded { replayed order { ...OrderDetailFields } }
+    ... on InsufficientStock { code message lines { skuId requested available } }
+    ... on PriceChanged { code message lines { skuId expectedUnitPriceMinor currentUnitPrice { ...MoneyFields } } }
+    ... on IdempotencyKeyReused { code message }
+  }
+}
+
+query MyOrders($first: Int, $after: String, $filter: OrderFilter) {
+  myOrders(first: $first, after: $after, filter: $filter) {
+    edges { cursor node { ...OrderSummaryFields } }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+
+query OrderDetail($id: ID!) {
+  order(id: $id) { ...OrderDetailFields }
+}
+
+mutation CancelOrder($orderId: ID!) {
+  cancelOrder(orderId: $orderId) {
+    __typename
+    ... on OrderCancelled { order { ...OrderDetailFields } }
+    ... on OrderNotCancellable { code message status }
+  }
+}
+
+mutation RequestReturn($input: RequestReturnInput!) {
+  requestReturn(input: $input) {
+    __typename
+    ... on ReturnRequested { return { id status } order { ...OrderDetailFields } }
+    ... on ReturnQuantityExceeded { code message lines { orderLineId requested returnable } }
+    ... on OrderNotReturnable { code message status }
+  }
+}
+
+subscription OrderUpdated($orderId: ID!) {
+  orderUpdated(orderId: $orderId) {
+    occurredAt
+    order { ...OrderDetailFields }
+  }
+}

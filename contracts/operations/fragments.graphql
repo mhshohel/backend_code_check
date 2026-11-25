@@ -1,0 +1,86 @@
+fragment MoneyFields on Money {
+  amountMinor
+  currency
+  formatted
+}
+
+fragment WarehouseFields on Warehouse {
+  id
+  code
+  name
+}
+
+fragment OrderSummaryFields on Order {
+  id
+  number
+  status
+  cancellationReason
+  total { ...MoneyFields }
+  createdAt
+  reservationExpiresAt
+  payment { id status }
+}
+
+fragment OrderDetailFields on Order {
+  id
+  number
+  status
+  cancellationReason
+  createdAt
+  updatedAt
+  reservationExpiresAt
+  customer { id email displayName }
+  subtotal { ...MoneyFields }
+  total { ...MoneyFields }
+  lines {
+    id
+    lineNumber
+    productName
+    skuCode
+    quantity
+    unitPrice { ...MoneyFields }
+    lineTotal { ...MoneyFields }
+    shippedQuantity
+    returnedQuantity
+    returnableQuantity
+    sku { id product { slug } }
+  }
+  reservations {
+    id
+    quantity
+    status
+    expiresAt
+    warehouse { ...WarehouseFields }
+    sku { id code }
+  }
+  payment {
+    id
+    status
+    amount { ...MoneyFields }
+    refunded { ...MoneyFields }
+    declineReason
+  }
+  shipments {
+    id
+    trackingCode
+    shippedAt
+    warehouse { ...WarehouseFields }
+    lines { orderLineId skuCode quantity }
+  }
+  returns {
+    id
+    status
+    reason
+    refund { ...MoneyFields }
+    createdAt
+    receivedAt
+    refundedAt
+    lines { orderLineId skuCode quantity warehouse { ...WarehouseFields } }
+  }
+  allowedActions {
+    canCancel
+    canRequestReturn
+    shippableWarehouses { ...WarehouseFields }
+    receivableReturnIds
+  }
+}

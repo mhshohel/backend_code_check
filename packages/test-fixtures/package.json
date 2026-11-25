@@ -1,0 +1,26 @@
+{
+  "name": "@ofl/test-fixtures",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint src tests",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ofl/domain": "workspace:*",
+    "@ofl/server-core": "workspace:*",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  },
+  "bin": {
+    "ofl-seed": "./bin/ofl-seed.js"
+  }
+}

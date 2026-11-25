@@ -1,0 +1,91 @@
+{
+  "dataset": "20060 products, 200039 orders, 800303 inventory movements, 42 customers",
+  "reports": [
+    {
+      "variant": "express",
+      "loads": [
+        {
+          "name": "express: product search",
+          "concurrency": 20,
+          "durationSeconds": 3,
+          "requests": 2000,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 666.7,
+          "p50Ms": 27.1,
+          "p95Ms": 53.3,
+          "p99Ms": 69.9,
+          "maxMs": 100.4,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        },
+        {
+          "name": "express: my orders first page (customer with 5000 orders)",
+          "concurrency": 20,
+          "durationSeconds": 3,
+          "requests": 2961,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 987,
+          "p50Ms": 15.4,
+          "p95Ms": 51.1,
+          "p99Ms": 84.4,
+          "maxMs": 123.2,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        },
+        {
+          "name": "express: checkout, distinct SKUs",
+          "concurrency": 50,
+          "durationSeconds": 3,
+          "requests": 413,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 137.7,
+          "p50Ms": 298.8,
+          "p95Ms": 483.8,
+          "p99Ms": 591.7,
+          "maxMs": 730.2,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        },
+        {
+          "name": "express: checkout, one hot SKU",
+          "concurrency": 50,
+          "durationSeconds": 3,
+          "requests": 277,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 92.3,
+          "p50Ms": 422.8,
+          "p95Ms": 786.3,
+          "p99Ms": 973.2,
+          "maxMs": 1331.2,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        }
+      ],
+      "queryCounts": {
+        "5": 10,
+        "20": 10,
+        "50": 10
+      },
+      "hotSku": {
+        "initialAvailable": 2025,
+        "succeeded": 327,
+        "insufficient": 0,
+        "finalAvailable": 1698
+      },
+      "distinctCheckouts": {
+        "succeeded": 959,
+        "insufficient": 0
+      },
+      "ledgerDifferences": 0
+    }
+  ],
+  "worker": {
+    "jobs": 5000,
+    "concurrency": 4,
+    "seconds": 31.8,
+    "jobsPerSecond": 157,
+    "lagP50Ms": 20911,
+    "lagP95Ms": 31096,
+    "failed": 0
+  }
+}
