@@ -71,7 +71,7 @@ export async function startRealtimeServer(options: RealtimeServerOptions): Promi
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject);
-    httpServer.listen(options.port, options.host ?? '0.0.0.0', () => resolve());
+    httpServer.listen(options.port, options.host ?? '127.0.0.1', () => resolve());
   });
   const address = httpServer.address();
   const port = typeof address === 'object' && address ? address.port : options.port;

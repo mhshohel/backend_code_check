@@ -7,7 +7,7 @@ import { useServer } from 'graphql-ws/use/ws';
 import WebSocket, { WebSocketServer } from 'ws';
 import { OrderUpdatedDocument } from '@ofl/graphql-types';
 import { print } from 'graphql';
-import { resolveSession, type SessionUser } from '../../src/features/auth/sessions';
+import { logout, resolveSession, type SessionUser } from '../../src/features/auth/sessions';
 import { shipOrder } from '../../src/features/fulfillment/operations';
 import { recordPaymentNotification } from '../../src/features/payments/notifications';
 import { createGraphQLContext } from '../../src/graphql/context';
@@ -184,5 +184,53 @@ describe('graphql-ws transport', () => {
     expect(rejected).toMatchObject({ errors: [{ extensions: { code: 'NOT_FOUND' } }] });
     expect(JSON.stringify(rejected)).not.toContain(order.paymentId);
     await stranger.dispose();
+  });
+
+  it('F3: serves subscriptions only and ends live updates when the session is revoked', async () => {
+    const order = await confirmedOrder();
+    const token = await tokenFor(instance1, base.customer);
+    const ws = client(token);
+
+    const firstResult = (query: string, variables: Record<string, unknown>) =>
+      new Promise<unknown>((resolve) => {
+        ws.subscribe({ query, variables }, { next: resolve, error: resolve, complete: () => resolve('complete') });
+      });
+    const queryOverWs = await firstResult('{ viewer { id } }', {});
+    expect(JSON.stringify(queryOverWs)).toContain('Only subscriptions');
+    const mutationOverWs = await firstResult(`mutation { cancelOrder(orderId: "${order.orderId}") { __typename } }`, {});
+    expect(JSON.stringify(mutationOverWs)).toContain('Only subscriptions');
+
+    const statuses: string[] = [];
+    const ended = new Promise<void>((resolve, reject) => {
+      ws.subscribe<{ orderUpdated: { order: { status: string } } }>(
+        { query: print(OrderUpdatedDocument), variables: { orderId: order.orderId } },
+        {
+          next: (value) => {
+            const status = value.data?.orderUpdated.order.status;
+            if (!status) return;
+            statuses.push(status);
+            if (status === 'PENDING_PAYMENT') {
+              // Log out, then change the order: the open subscription must not deliver it.
+              void logout(instance1, token).then(() =>
+                recordPaymentNotification(
+                  instance2,
+                  { providerEventId: 'evt_ws_logout', paymentId: order.paymentId, kind: 'PAYMENT_SUCCEEDED', amountMinor: order.amountMinor },
+                  meta(),
+                ),
+              );
+            }
+          },
+          error: reject,
+          complete: resolve,
+        },
+      );
+    });
+    await ended;
+    expect(statuses).toEqual(['PENDING_PAYMENT']);
+
+    // A new subscription on the same socket is now anonymous.
+    const afterLogout = await firstResult(print(OrderUpdatedDocument), { orderId: order.orderId });
+    expect(afterLogout).toMatchObject({ errors: [{ extensions: { code: 'UNAUTHENTICATED' } }] });
+    await ws.dispose();
   });
 });

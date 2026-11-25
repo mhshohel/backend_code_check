@@ -7,6 +7,7 @@ import { getRequestMeta, getViewer } from '../server/session';
 import { appErrorCode } from '../server/app-error';
 import { CATALOG_SEARCH_TAG } from '../server/data/catalog';
 import { runOperation } from '../server/data/run-operation';
+import { parsePriceToMinor } from './price-input';
 
 export type PriceUpdateState =
   | { status: 'idle' }
@@ -21,9 +22,11 @@ export type PriceUpdateState =
  */
 export async function updateSkuPriceAction(_previous: PriceUpdateState, formData: FormData): Promise<PriceUpdateState> {
   const skuId = String(formData.get('skuId') ?? '');
-  const price = Number(String(formData.get('price') ?? '').trim());
-  if (!Number.isFinite(price) || price < 0) return { status: 'error', message: 'Enter a price such as 12.50.' };
-  const priceMinor = Math.round(price * 100);
+  const rawPrice = formData.get('price');
+  // Validated here, on the server: the form's type=number field is only a hint.
+  const parsed = parsePriceToMinor(typeof rawPrice === 'string' ? rawPrice : '');
+  if (!parsed.ok) return { status: 'error', message: parsed.message };
+  const priceMinor = parsed.priceMinor;
 
   const [services, viewer, meta] = await Promise.all([getServices(), getViewer(), getRequestMeta()]);
   try {

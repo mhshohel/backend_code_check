@@ -41,7 +41,9 @@
     "test": "pnpm -r --workspace-concurrency=1 test",
     "build": "pnpm -r build",
     "bench:explain": "tsx scripts/bench/explain-my-orders.ts",
-    "bench": "tsx scripts/bench/run-benchmarks.ts"
+    "bench": "tsx scripts/bench/run-benchmarks.ts",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
+    "lint:scripts": "eslint scripts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

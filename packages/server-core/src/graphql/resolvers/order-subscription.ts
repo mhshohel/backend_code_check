@@ -27,6 +27,11 @@ export async function subscribeToOrder(ctx: GraphQLContext, orderIdInput: string
   const done = (): IteratorResult<OrderUpdatedPayload> => ({ value: undefined, done: true });
 
   const readCurrent = async (): Promise<IteratorResult<OrderUpdatedPayload>> => {
+    // A revoked or expired session ends the stream before any more data is read.
+    if (ctx.sessionStillValid && !(await ctx.sessionStillValid())) {
+      subscription.signals.close();
+      return done();
+    }
     // New loaders per event: cached rows from the previous event are stale.
     ctx.dataloaders.reset();
     const order = await findOrder(ctx.services.db, authorized.id);

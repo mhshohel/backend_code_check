@@ -4,8 +4,8 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { SESSION_COOKIE_NAME, login, logout, sessionCookieOptions } from '@ofl/server-core';
 import { getServices } from '../server/services';
-import { RATE_LIMITS, checkRateLimit } from '../server/http/rate-limit';
-import { requestMetaFrom } from '../server/http/request-meta';
+import { RATE_LIMITS, checkRateLimit, loginAccountKey } from '../server/http/rate-limit';
+import { rateLimitKeyFrom, requestMetaFrom } from '../server/http/request-meta';
 import { safeReturnPath } from './return-path';
 
 export type LoginFormState = { error: string | null; email: string };
@@ -18,10 +18,17 @@ export type LoginFormState = { error: string | null; email: string };
 export async function loginAction(_previous: LoginFormState, formData: FormData): Promise<LoginFormState> {
   const email = String(formData.get('email') ?? '').trim();
   const password = String(formData.get('password') ?? '');
-  const meta = requestMetaFrom(await headers());
+  const requestHeaders = await headers();
+  const meta = requestMetaFrom(requestHeaders);
 
-  const limit = checkRateLimit(RATE_LIMITS.login, meta.ip ?? 'unknown');
-  if (!limit.allowed) return { error: `Too many sign-in attempts. Try again in ${limit.retryAfterSeconds} seconds.`, email };
+  // Same two limits as POST /api/auth/login: per client (or shared bucket) and per account.
+  for (const [rule, key] of [
+    [RATE_LIMITS.login, rateLimitKeyFrom(requestHeaders)],
+    [RATE_LIMITS.loginAccount, loginAccountKey(email)],
+  ] as const) {
+    const limit = checkRateLimit(rule, key);
+    if (!limit.allowed) return { error: `Too many sign-in attempts. Try again in ${limit.retryAfterSeconds} seconds.`, email };
+  }
 
   const services = await getServices();
   const result = await login(services, { email, password }, meta);

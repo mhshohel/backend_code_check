@@ -32,6 +32,10 @@ export function isIndexMissing(error: unknown): boolean {
   return error instanceof errors.ResponseError && error.statusCode === 404;
 }
 
+export function isBadRequest(error: unknown): boolean {
+  return error instanceof errors.ResponseError && error.statusCode === 400;
+}
+
 export function isVersionConflict(error: unknown): boolean {
   return error instanceof errors.ResponseError && error.statusCode === 409;
 }

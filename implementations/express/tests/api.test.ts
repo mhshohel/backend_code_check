@@ -128,6 +128,25 @@ describe('limits and error format', () => {
     expect(await response.json()).toMatchObject({ error: expect.stringContaining('too large') });
   });
 
+  it('applies the 100 KB limit to every JSON media type on /graphql', async () => {
+    const big = JSON.stringify({ query: '{ __typename }', variables: { padding: 'x'.repeat(110 * 1024) } });
+    for (const type of ['application/graphql+json', 'application/graphql-response+json']) {
+      const response = await post('/graphql', big, { ...CSRF, 'content-type': type });
+      expect(response.status).toBe(413);
+    }
+    const small = await post('/graphql', { query: '{ __typename }' }, { ...CSRF, 'content-type': 'application/graphql+json' });
+    expect(small.status).toBe(200);
+    expect(await small.json()).toEqual({ data: { __typename: 'Query' } });
+  });
+
+  it('rejects non-JSON GraphQL bodies with 415 before Yoga reads them', async () => {
+    for (const type of ['text/plain', 'application/x-www-form-urlencoded', 'application/graphql']) {
+      const response = await post('/graphql', 'query=' + 'x'.repeat(200 * 1024), { ...CSRF, 'content-type': type });
+      expect(response.status).toBe(415);
+      expect(await response.json()).toMatchObject({ errors: [{ extensions: { code: 'BAD_USER_INPUT' } }] });
+    }
+  });
+
   it('answers malformed JSON with 400 and unknown routes with 404 in the same shape', async () => {
     const malformed = await post('/auth/login', '{"email":');
     expect(malformed.status).toBe(400);

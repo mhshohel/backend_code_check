@@ -2,6 +2,10 @@
 // counters, so N instances allow N times the configured rate. A shared store
 // (PostgreSQL or Redis) would be needed for a hard global limit; for this lab
 // the per-process limit is an accepted, documented tradeoff.
+//
+// Keys: the client IP only when TRUST_PROXY=true, otherwise one shared bucket
+// per route (see request-meta.ts). Login is additionally limited per account,
+// so a password guesser is throttled however the IP key is derived.
 
 export type RateLimitRule = { readonly name: string; readonly limit: number; readonly windowMs: number };
 
@@ -11,6 +15,7 @@ type Window = { count: number; resetAt: number };
 
 export const RATE_LIMITS = {
   login: { name: 'login', limit: 10, windowMs: 60_000 },
+  loginAccount: { name: 'login-account', limit: 10, windowMs: 60_000 },
   graphql: { name: 'graphql', limit: 300, windowMs: 60_000 },
   webhook: { name: 'webhook', limit: 120, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
@@ -60,6 +65,11 @@ export function processRateLimiter(): FixedWindowRateLimiter {
   const holder = globalThis as typeof globalThis & LimiterHolder;
   holder[LIMITER_KEY] ??= new FixedWindowRateLimiter();
   return holder[LIMITER_KEY];
+}
+
+/** Account key for the per-account login limit: the normalized email address. */
+export function loginAccountKey(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 export function checkRateLimit(rule: RateLimitRule, clientKey: string): RateLimitDecision {

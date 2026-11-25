@@ -1,7 +1,7 @@
 import type { ReservationStatus } from '@ofl/domain';
 import type { Tx } from '../../db/db';
 import { applyStockChanges, lockBalancesForSkus } from '../inventory/ledger';
-import { RESERVATION_COLUMNS, type ReservationRecord } from './records';
+import { assertReservationTransitions, RESERVATION_COLUMNS, type ReservationRecord } from './records';
 
 /**
  * Releases the order's holds in the given statuses: RELEASE movements,
@@ -22,6 +22,7 @@ export async function releaseOrderReservations(
     [orderId, [...statuses]],
   );
   if (held.rows.length === 0) return [];
+  assertReservationTransitions(held.rows, 'RELEASED');
 
   await lockBalancesForSkus(
     tx,

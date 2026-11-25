@@ -172,21 +172,25 @@ export function buildSuggestRequest(prefix: string, limit: number): Omit<estypes
   };
 }
 
-/** search_after cursors carry the sort values of the last hit. */
-export function encodeSearchCursor(sortValues: estypes.SortResults): string {
-  return Buffer.from(JSON.stringify(sortValues), 'utf8').toString('base64url');
+/**
+ * search_after cursors carry the sort mode and the sort values of the last
+ * hit. Decoding checks the mode and the value types, so a forged cursor is
+ * a BAD_USER_INPUT instead of an Elasticsearch parse failure.
+ */
+export function encodeSearchCursor(sort: ProductSort, sortValues: estypes.SortResults): string {
+  return Buffer.from(JSON.stringify([sort, ...sortValues]), 'utf8').toString('base64url');
 }
 
-export function decodeSearchCursor(cursor: string | null | undefined): estypes.SortResults | null {
+export function decodeSearchCursor(cursor: string | null | undefined, sort: ProductSort): estypes.SortResults | null {
   if (!cursor) return null;
   try {
     const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-    if (
-      Array.isArray(parsed) &&
-      parsed.length === 2 &&
-      parsed.every((v) => typeof v === 'string' || typeof v === 'number' || v === null)
-    ) {
-      return parsed as estypes.SortResults;
+    if (Array.isArray(parsed) && parsed.length === 3) {
+      const [mode, first, id] = parsed as unknown[];
+      // Every sort is (number, id): score, price, or createdAt as epoch milliseconds.
+      if (mode === sort && typeof first === 'number' && Number.isFinite(first) && typeof id === 'string' && id.length <= 64) {
+        return [first, id];
+      }
     }
   } catch {
     // Fall through.

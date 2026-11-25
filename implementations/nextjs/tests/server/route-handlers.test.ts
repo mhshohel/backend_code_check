@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
 import { loadConfig, signWebhookBody } from '@ofl/server-core';
 import { resetToFixture } from '@ofl/test-fixtures';
 import { testEnv } from '../support/test-env';
@@ -6,8 +6,10 @@ import { testEnv } from '../support/test-env';
 // Route handlers are plain functions of a Web Request, so these tests call the
 // exported handlers directly, in-process, against ofl_nextjs_test.
 // Rate limiting stays ON here (RATE_LIMIT_DISABLED is not set) to test 429.
+// TRUST_PROXY is off by default, as in a plain `next start`.
 const env = testEnv({ RATE_LIMIT_DISABLED: 'false' });
 Object.assign(process.env, env);
+delete process.env.TRUST_PROXY;
 
 type Handler = (request: Request) => Promise<Response>;
 let graphql: { POST: Handler; OPTIONS: () => Response };
@@ -18,6 +20,7 @@ let live: { GET: () => Response };
 let ready: { GET: () => Promise<Response> };
 let metrics: { GET: () => Promise<Response> };
 let disposeServices: () => Promise<void>;
+let resetLimiter: () => void;
 
 const BASE = 'http://127.0.0.1:4300';
 let ipCounter = 0;
@@ -50,7 +53,15 @@ beforeAll(async () => {
   ready = await import('@/app/api/health/ready/route');
   metrics = await import('@/app/api/metrics/route');
   ({ disposeServices } = await import('@/modules/server/services'));
+  const { processRateLimiter } = await import('@/modules/server/http/rate-limit');
+  resetLimiter = () => processRateLimiter().reset();
 }, 120_000);
+
+// Without a trusted proxy every client shares one bucket per route, so each test starts with fresh counters.
+beforeEach(() => {
+  resetLimiter();
+  delete process.env.TRUST_PROXY;
+});
 
 afterAll(async () => {
   await disposeServices();
@@ -84,14 +95,41 @@ describe('POST /api/auth/login', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
   });
 
-  it('rate limits to 10 attempts per minute per IP', async () => {
-    const ip = '10.9.9.9';
-    const attempt = () =>
-      loginRoute.POST(post('/api/auth/login', JSON.stringify({ email: 'x@example.com', password: 'y' }), { ...csrf, 'x-forwarded-for': ip }));
-    for (let i = 0; i < 10; i += 1) expect((await attempt()).status).toBe(401);
-    const limited = await attempt();
+});
+
+describe('rate limits cannot be bypassed with X-Forwarded-For', () => {
+  const wrongLogin = (forwardedFor: string, email = 'x@example.com') =>
+    loginRoute.POST(post('/api/auth/login', JSON.stringify({ email, password: 'wrong-password' }), { ...csrf, 'x-forwarded-for': forwardedFor }));
+
+  it('ignores a rotating client-supplied X-Forwarded-For when no proxy is trusted', async () => {
+    for (let i = 0; i < 10; i += 1) expect((await wrongLogin(`203.0.113.${i}`, `user${i}@example.com`)).status).toBe(401);
+    const limited = await wrongLogin('203.0.113.200', 'someone-else@example.com');
     expect(limited.status).toBe(429);
     expect(limited.headers.get('retry-after')).toBeTruthy();
+  });
+
+  it('keys on the right-most entry when TRUST_PROXY=true, so spoofed left entries do not help', async () => {
+    process.env.TRUST_PROXY = 'true';
+    for (let i = 0; i < 10; i += 1) expect((await wrongLogin(`198.51.100.${i}, 10.0.0.1`, `user${i}@example.com`)).status).toBe(401);
+    expect((await wrongLogin('198.51.100.99, 10.0.0.1', 'other@example.com')).status).toBe(429);
+    // A different client (as reported by the proxy) has its own bucket.
+    expect((await wrongLogin('10.0.0.2', 'other@example.com')).status).toBe(401);
+  });
+
+  it('limits password guessing per account even when every attempt comes from a new trusted IP', async () => {
+    process.env.TRUST_PROXY = 'true';
+    for (let i = 0; i < 10; i += 1) expect((await wrongLogin(`10.1.${i}.1`, 'customer@example.com')).status).toBe(401);
+    expect((await wrongLogin('10.1.99.1', 'Customer@Example.com')).status).toBe(429);
+  });
+
+  it('applies the same keying to the webhook limit', async () => {
+    const body = '{}';
+    for (let i = 0; i < 120; i += 1) {
+      const response = await webhook.POST(post('/api/webhooks/payments', body, { 'x-forwarded-for': `192.0.2.${i % 250}`, 'x-ofl-signature': 'sha256=00' }));
+      expect(response.status).not.toBe(429);
+    }
+    const limited = await webhook.POST(post('/api/webhooks/payments', body, { 'x-forwarded-for': '192.0.2.251', 'x-ofl-signature': 'sha256=00' }));
+    expect(limited.status).toBe(429);
   });
 });
 

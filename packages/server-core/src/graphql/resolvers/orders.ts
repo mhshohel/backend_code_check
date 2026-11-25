@@ -1,7 +1,8 @@
-import { isCancellable, isReturnableStatus, isStaff, returnableQuantity } from '@ofl/domain';
+import { isReturnableStatus, isStaff, orderAllowedActions, returnableQuantity } from '@ofl/domain';
 import { pageRequest } from '../../db/pagination';
 import { checkout } from '../../features/checkout/operations';
 import { shipOrder } from '../../features/fulfillment/operations';
+import { parseIdArgument } from '../../features/auth/guards';
 import { cancelOrder, getOrderForViewer } from '../../features/orders/operations';
 import { listAllOrders, listMyOrders } from '../../features/orders/queries';
 import { findOrder, type OrderRecord } from '../../features/orders/records';
@@ -16,7 +17,7 @@ async function loadOrder(ctx: GraphQLContext, orderId: string): Promise<OrderRec
   return required(await findOrder(ctx.services.db, orderId), 'Order');
 }
 
-/** Same rules the workflows enforce, evaluated for display (requirements: allowedActions). */
+/** Loads what orderAllowedActions needs, through the batched loaders. The rules live in @ofl/domain. */
 async function allowedActions(order: OrderModel, ctx: GraphQLContext): Promise<Omit<OrderActions, 'shippableWarehouses'> & { shippableWarehouses: WarehouseModel[] }> {
   const viewer = ctx.viewer;
   if (!viewer) return { canCancel: false, canRequestReturn: false, shippableWarehouses: [], receivableReturnIds: [] };
@@ -26,35 +27,38 @@ async function allowedActions(order: OrderModel, ctx: GraphQLContext): Promise<O
 
   const [shipments, lines, reservations, returns] = await Promise.all([
     load.shipmentsByOrder.load(order.id),
-    isOwner && isReturnableStatus(order.status) ? load.linesByOrder.load(order.id) : Promise.resolve([]),
+    isOwner && !staff && isReturnableStatus(order.status) ? load.linesByOrder.load(order.id) : Promise.resolve([]),
     staff ? load.reservationsByOrder.load(order.id) : Promise.resolve([]),
     staff ? load.returnsByOrder.load(order.id) : Promise.resolve([]),
   ]);
-
-  let canRequestReturn = false;
-  if (isOwner && !staff && lines.length > 0) {
-    const [shipped, returned] = await Promise.all([
-      load.shippedQuantityByLine.loadMany(lines.map((l) => l.id)),
-      load.returnedQuantityByLine.loadMany(lines.map((l) => l.id)),
-    ]);
-    canRequestReturn = lines.some((line, index) => {
+  let returnableUnits = 0;
+  if (lines.length > 0) {
+    const ids = lines.map((l) => l.id);
+    const [shipped, returned] = await Promise.all([load.shippedQuantityByLine.loadMany(ids), load.returnedQuantityByLine.loadMany(ids)]);
+    lines.forEach((line, index) => {
       const shippedQuantity = shipped[index];
       const returnedQuantity = returned[index];
-      if (typeof shippedQuantity !== 'number' || typeof returnedQuantity !== 'number') return false;
-      return returnableQuantity({ orderLineId: line.id, shippedQuantity, returnedQuantity }) > 0;
+      if (typeof shippedQuantity === 'number' && typeof returnedQuantity === 'number') {
+        returnableUnits += returnableQuantity({ orderLineId: line.id, shippedQuantity, returnedQuantity });
+      }
     });
   }
 
-  const shippableIds =
-    order.status === 'CONFIRMED' || order.status === 'PARTIALLY_SHIPPED'
-      ? [...new Set(reservations.filter((r) => r.status === 'CONFIRMED').map((r) => r.warehouseId))]
-      : [];
+  const actions = orderAllowedActions({
+    status: order.status,
+    shipmentCount: shipments.length,
+    role: viewer.role,
+    isOwner,
+    returnableUnits,
+    confirmedWarehouseIds: reservations.filter((r) => r.status === 'CONFIRMED').map((r) => r.warehouseId),
+    requestedReturnIds: returns.filter((r) => r.status === 'REQUESTED').map((r) => r.id),
+  });
   const warehouses = await load.allWarehouses();
   return {
-    canCancel: (staff || isOwner) && isCancellable({ status: order.status, shipmentCount: shipments.length }),
-    canRequestReturn,
-    shippableWarehouses: warehouses.filter((w) => shippableIds.includes(w.id)),
-    receivableReturnIds: returns.filter((r) => r.status === 'REQUESTED').map((r) => r.id),
+    canCancel: actions.canCancel,
+    canRequestReturn: actions.canRequestReturn,
+    shippableWarehouses: warehouses.filter((w) => actions.shippableWarehouseIds.includes(w.id)),
+    receivableReturnIds: [...actions.receivableReturnIds],
   };
 }
 
@@ -63,7 +67,7 @@ type OrderFilterArg = ResolversTypes['OrderFilter'] | null | undefined;
 function toFilter(filter: OrderFilterArg) {
   return {
     status: filter?.status ?? null,
-    awaitingShipmentFromWarehouseId: filter?.awaitingShipmentFromWarehouseId ?? null,
+    awaitingShipmentFromWarehouseId: parseIdArgument(filter?.awaitingShipmentFromWarehouseId, 'filter.awaitingShipmentFromWarehouseId'),
     withReturnsAwaitingReceipt: filter?.withReturnsAwaitingReceipt ?? null,
   };
 }

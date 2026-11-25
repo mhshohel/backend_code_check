@@ -6,7 +6,7 @@ import type { RequestMeta, SessionUser } from '../auth/sessions';
 import { enqueueSearchUpdateForSkus } from '../catalog/search-events';
 import { createRefund } from '../payments/refunds';
 import { recordOrderChanged } from './events';
-import { findOrder, findPaymentForOrder, lockOrder, type OrderRecord } from './records';
+import { findOrder, findPaymentForOrder, lockOrder, updateOrderStatus, type OrderRecord } from './records';
 import { releaseOrderReservations } from './reservations';
 
 export type CancelOrderOutcome =
@@ -35,10 +35,7 @@ export async function cancelOrder(
     const byOwner = order.customerId === user.id;
     const reason = byOwner && !isStaff(user.role) ? 'CUSTOMER_REQUEST' : 'OPERATOR_REQUEST';
     const released = await releaseOrderReservations(tx, orderId, ['ACTIVE', 'CONFIRMED'], reason);
-    await tx.query(`UPDATE orders SET status = 'CANCELLED', cancellation_reason = $2, updated_at = now() WHERE id = $1`, [
-      orderId,
-      reason,
-    ]);
+    await updateOrderStatus(tx, order, 'CANCELLED', reason);
 
     const payment = await findPaymentForOrder(tx, orderId);
     if (payment && payment.status === 'CAPTURED') {
@@ -91,10 +88,7 @@ export async function expireOrderReservations(services: Services, orderId: strin
     if (services.clock.now().getTime() < expiresAt.getTime()) return { expired: false };
 
     const released = await releaseOrderReservations(tx, orderId, ['ACTIVE'], 'RESERVATION_EXPIRED');
-    await tx.query(
-      `UPDATE orders SET status = 'CANCELLED', cancellation_reason = 'RESERVATION_EXPIRED', updated_at = now() WHERE id = $1`,
-      [orderId],
-    );
+    await updateOrderStatus(tx, order, 'CANCELLED', 'RESERVATION_EXPIRED');
     await enqueueSearchUpdateForSkus(
       tx,
       released.map((r) => r.skuId),

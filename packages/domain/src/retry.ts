@@ -11,9 +11,19 @@ const RETRYABLE_SQLSTATES = new Set([
   '55P03', // lock_not_available
   '57014', // query_canceled (statement_timeout)
   '53300', // too_many_connections
+  '08000', // connection_exception
+  '08003', // connection_does_not_exist
   '08006', // connection_failure
   '08001', // sqlclient_unable_to_establish_sqlconnection
+  '08004', // sqlserver_rejected_establishment_of_sqlconnection
+  '08P01', // protocol_violation (seen when a connection breaks mid-message)
+  '57P01', // admin_shutdown
+  '57P02', // crash_shutdown
+  '57P03', // cannot_connect_now (server starting up or in recovery)
 ]);
+
+// node-postgres reports a lost connection as a plain Error without a code.
+const RETRYABLE_DRIVER_MESSAGES = /Connection terminated|connection timeout|timeout exceeded when trying to connect|Client has encountered a connection error/i;
 
 const RETRYABLE_NETWORK_CODES = new Set(['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN']);
 
@@ -35,6 +45,9 @@ export function classifyError(error: unknown): RetryDecision {
   }
   const status = typeof shape.statusCode === 'number' ? shape.statusCode : shape.meta?.statusCode;
   if (typeof status === 'number' && RETRYABLE_HTTP_STATUS.has(status)) {
+    return 'RETRYABLE';
+  }
+  if (error instanceof Error && typeof shape.code !== 'string' && RETRYABLE_DRIVER_MESSAGES.test(error.message)) {
     return 'RETRYABLE';
   }
   // Elasticsearch client connection errors have names but no codes.

@@ -125,6 +125,40 @@ describe('GraphQL over Yoga', () => {
     expect(codes(await gql(viaVariable, { n: 1 }, { token: tokens.operator }))).toEqual([]);
   });
 
+  it('F1: 300 aliased searchProducts are rejected before any resolver runs', async () => {
+    const original = services.search.search;
+    let calls = 0;
+    services.search.search = async (...args) => {
+      calls += 1;
+      return original(...args);
+    };
+    try {
+      const query = `{ ${Array.from({ length: 300 }, (_, i) => `s${i}: searchProducts(first: 1) { totalCount }`).join(' ')} }`;
+      const result = await gql(query, {}, {});
+      expect(codes(result)).toEqual(['QUERY_TOO_COMPLEX']);
+      expect(result.data ?? null).toBeNull();
+      const aliasedProducts = `{ ${Array.from({ length: 25 }, (_, i) => `p${i}: product(slug: "x${i}") { id }`).join(' ')} }`;
+      expect(codes(await gql(aliasedProducts, {}, {}))).toEqual(['QUERY_TOO_COMPLEX']);
+      expect(calls).toBe(0);
+    } finally {
+      services.search.search = original;
+    }
+  });
+
+  it('F6/F7: forged search cursors and malformed id arguments are BAD_USER_INPUT', async () => {
+    await createSku(services, base, { east: 1 });
+    await services.search.indexProducts(services.db, [(await createSku(services, base, { east: 1 })).productId]);
+    const forged = Buffer.from(JSON.stringify(['not-a-number', 'x'])).toString('base64url');
+    const search = 'query($after: String) { searchProducts(input: { sort: PRICE_ASC }, first: 5, after: $after) { totalCount } }';
+    expect(codes(await gql(search, { after: forged }, {}))).toEqual(['BAD_USER_INPUT']);
+    const operator = { token: tokens.operator };
+    expect(codes(await gql('{ inventoryMovements(skuId: "abc") { edges { cursor } } }', {}, operator))).toEqual(['BAD_USER_INPUT']);
+    expect(codes(await gql('{ inventory(warehouseId: "abc") { edges { cursor } } }', {}, operator))).toEqual(['BAD_USER_INPUT']);
+    expect(codes(await gql('{ orders(filter: { awaitingShipmentFromWarehouseId: "abc" }) { edges { cursor } } }', {}, operator))).toEqual([
+      'BAD_USER_INPUT',
+    ]);
+  });
+
   it('pages myOrders newest first with stable cursors', async () => {
     const sku = await createSku(services, base, { east: 50 });
     const created: string[] = [];

@@ -80,11 +80,34 @@ Acceptance scenario S12 checks that the query count is the same for 5, 20, and
 | Limit | Value | Why |
 | --- | --- | --- |
 | Depth | 10 | The deepest real operation (`orderUpdated` → order → returns → lines → warehouse) is 6. |
-| Cost | 5000 | Each field costs 1; a list field multiplies its subtree by `first` (or 50 if unbounded by argument). A 50-order page with full detail costs well under the limit; nested connections of connections exceed it. |
+| Cost | 5000 | See the cost model below. The full `OperatorOrders(first: 50)` page stays under the limit; nested connections of connections exceed it. |
+| Root fields | 20 per operation | Counted after fragments are expanded; every alias counts. Stops one request from fanning out into hundreds of searches. |
 | Page size | 1..50 | Enforced in resolvers with `BAD_USER_INPUT`. |
 | Body size | 100 KB | Enforced by each HTTP framework. |
 
-A rejected query returns `QUERY_TOO_COMPLEX` before any resolver runs.
+Cost model ([`graphql/limits.ts`](../packages/server-core/src/graphql/limits.ts)):
+
+| Field | Cost |
+| --- | --- |
+| Root field (each alias separately) | at least 10, plus its subtree |
+| Field with `first` or `limit` | 10 + size × subtree (size defaults to 20) |
+| `edges` inside a connection | not multiplied again |
+| Other list field | 5 × subtree |
+| Other object field | 1 + subtree |
+| Scalar field | 0 |
+
+Why a base cost for root fields: an earlier model charged 1 for a field with
+only scalar children. The independent review sent 300 aliased
+`searchProducts` fields in one anonymous request; they fit under the limit and
+overloaded Elasticsearch. Root fields now cost at least 10, and an operation
+may have at most 20 root fields.
+
+The limits run in three places: the Yoga plugin (HTTP), `executeOperation`
+(Next.js Server Components), and the WebSocket subscribe handler. A rejected
+query returns `QUERY_TOO_COMPLEX` before any resolver runs.
+
+WebSocket accepts only subscriptions. Queries and mutations sent over a socket
+are rejected, so they cannot bypass the HTTP rate limits.
 
 ## 6. Authorization
 

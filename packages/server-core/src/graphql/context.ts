@@ -15,9 +15,14 @@ export type GraphQLContext = {
   queryCounter: QueryCounter;
   /** True when the response should carry extensions.queryCount. */
   reportQueryCount: boolean;
+  /**
+   * Long-lived operations (subscriptions) call this before each event. It
+   * returns false once the viewer's session was revoked or expired.
+   */
+  sessionStillValid: (() => Promise<boolean>) | null;
 };
 
-export type CreateContextOptions = { countQueries?: boolean };
+export type CreateContextOptions = { countQueries?: boolean; sessionStillValid?: () => Promise<boolean> };
 
 /** Fresh DataLoaders for every request: nothing is cached across requests. */
 export function createGraphQLContext(
@@ -41,6 +46,7 @@ export function createGraphQLContext(
     dataloaders: holder,
     queryCounter,
     reportQueryCount: services.config.enableQueryCount && options.countQueries === true,
+    sessionStillValid: options.sessionStillValid ?? null,
   };
 }
 

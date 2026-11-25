@@ -7,57 +7,57 @@
         {
           "name": "express: product search",
           "concurrency": 20,
-          "durationSeconds": 3,
-          "requests": 2000,
+          "durationSeconds": 15,
+          "requests": 28555,
           "errors": 0,
           "errorRate": 0,
-          "throughputPerSecond": 666.7,
-          "p50Ms": 27.1,
-          "p95Ms": 53.3,
-          "p99Ms": 69.9,
-          "maxMs": 100.4,
+          "throughputPerSecond": 1903.7,
+          "p50Ms": 9.7,
+          "p95Ms": 17.3,
+          "p99Ms": 24.5,
+          "maxMs": 59.5,
           "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
         },
         {
           "name": "express: my orders first page (customer with 5000 orders)",
           "concurrency": 20,
-          "durationSeconds": 3,
-          "requests": 2961,
+          "durationSeconds": 15,
+          "requests": 28008,
           "errors": 0,
           "errorRate": 0,
-          "throughputPerSecond": 987,
-          "p50Ms": 15.4,
-          "p95Ms": 51.1,
-          "p99Ms": 84.4,
-          "maxMs": 123.2,
+          "throughputPerSecond": 1867.2,
+          "p50Ms": 10.6,
+          "p95Ms": 14.2,
+          "p99Ms": 17,
+          "maxMs": 45.8,
           "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
         },
         {
           "name": "express: checkout, distinct SKUs",
           "concurrency": 50,
-          "durationSeconds": 3,
-          "requests": 413,
+          "durationSeconds": 15,
+          "requests": 18868,
           "errors": 0,
           "errorRate": 0,
-          "throughputPerSecond": 137.7,
-          "p50Ms": 298.8,
-          "p95Ms": 483.8,
-          "p99Ms": 591.7,
-          "maxMs": 730.2,
+          "throughputPerSecond": 1257.9,
+          "p50Ms": 38.3,
+          "p95Ms": 50.1,
+          "p99Ms": 70.8,
+          "maxMs": 114.7,
           "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
         },
         {
           "name": "express: checkout, one hot SKU",
           "concurrency": 50,
-          "durationSeconds": 3,
-          "requests": 277,
+          "durationSeconds": 15,
+          "requests": 32163,
           "errors": 0,
           "errorRate": 0,
-          "throughputPerSecond": 92.3,
-          "p50Ms": 422.8,
-          "p95Ms": 786.3,
-          "p99Ms": 973.2,
-          "maxMs": 1331.2,
+          "throughputPerSecond": 2144.2,
+          "p50Ms": 19.4,
+          "p95Ms": 59.3,
+          "p99Ms": 104.3,
+          "maxMs": 141.3,
           "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
         }
       ],
@@ -67,25 +67,113 @@
         "50": 10
       },
       "hotSku": {
-        "initialAvailable": 2025,
-        "succeeded": 327,
-        "insufficient": 0,
-        "finalAvailable": 1698
+        "initialAvailable": 2014,
+        "succeeded": 2014,
+        "insufficient": 30199,
+        "finalAvailable": 0
       },
       "distinctCheckouts": {
-        "succeeded": 959,
+        "succeeded": 22886,
+        "insufficient": 0
+      },
+      "ledgerDifferences": 0
+    },
+    {
+      "variant": "fastify",
+      "loads": [
+        {
+          "name": "fastify: product search",
+          "concurrency": 20,
+          "durationSeconds": 15,
+          "requests": 24632,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 1642.1,
+          "p50Ms": 11.3,
+          "p95Ms": 20.3,
+          "p99Ms": 27.3,
+          "maxMs": 60.8,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        },
+        {
+          "name": "fastify: my orders first page (customer with 5000 orders)",
+          "concurrency": 20,
+          "durationSeconds": 15,
+          "requests": 13319,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 887.9,
+          "p50Ms": 12.4,
+          "p95Ms": 77.1,
+          "p99Ms": 231,
+          "maxMs": 623.8,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        },
+        {
+          "name": "fastify: checkout, distinct SKUs",
+          "concurrency": 50,
+          "durationSeconds": 15,
+          "requests": 16763,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 1117.5,
+          "p50Ms": 41.9,
+          "p95Ms": 58.9,
+          "p99Ms": 77.9,
+          "maxMs": 298.1,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        },
+        {
+          "name": "fastify: checkout, one hot SKU",
+          "concurrency": 50,
+          "durationSeconds": 15,
+          "requests": 26191,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 1746.1,
+          "p50Ms": 20.5,
+          "p95Ms": 92.2,
+          "p99Ms": 137.8,
+          "maxMs": 192.4,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        }
+      ],
+      "queryCounts": {
+        "5": 10,
+        "20": 10,
+        "50": 10
+      },
+      "hotSku": {
+        "initialAvailable": 2016,
+        "succeeded": 2016,
+        "insufficient": 24225,
+        "finalAvailable": 0
+      },
+      "distinctCheckouts": {
+        "succeeded": 19704,
         "insufficient": 0
       },
       "ledgerDifferences": 0
     }
   ],
-  "worker": {
-    "jobs": 5000,
-    "concurrency": 4,
-    "seconds": 31.8,
-    "jobsPerSecond": 157,
-    "lagP50Ms": 20911,
-    "lagP95Ms": 31096,
-    "failed": 0
-  }
+  "workers": [
+    {
+      "jobs": 5000,
+      "concurrency": 4,
+      "seconds": 23.9,
+      "jobsPerSecond": 209,
+      "lagP50Ms": 12888,
+      "lagP95Ms": 22811,
+      "failed": 0
+    },
+    {
+      "jobs": 5000,
+      "concurrency": 16,
+      "seconds": 7.1,
+      "jobsPerSecond": 708,
+      "lagP50Ms": 2888,
+      "lagP95Ms": 6640,
+      "failed": 0
+    }
+  ]
 }

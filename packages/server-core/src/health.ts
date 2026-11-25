@@ -14,22 +14,25 @@ export function checkLiveness(): { ok: true } {
  */
 export async function checkReadiness(services: Services): Promise<Readiness> {
   const [postgres, elasticsearch] = await Promise.all([
-    timed(async () => {
+    timed(services, 'postgres', async () => {
       await services.db.query('SELECT 1');
     }),
-    timed(async () => {
+    timed(services, 'elasticsearch', async () => {
       if (!(await services.search.ping())) throw new Error('Elasticsearch did not answer.');
     }),
   ]);
   return { ok: postgres.ok, checks: { postgres, elasticsearch } };
 }
 
-async function timed(check: () => Promise<void>): Promise<DependencyCheck> {
+// The response may be public, so it carries a fixed code; hosts, ports,
+// and driver messages go to the log only.
+async function timed(services: Services, dependency: string, check: () => Promise<void>): Promise<DependencyCheck> {
   const started = performance.now();
   try {
     await check();
     return { ok: true, latencyMs: Math.round(performance.now() - started) };
   } catch (error) {
-    return { ok: false, latencyMs: Math.round(performance.now() - started), error: error instanceof Error ? error.message : String(error) };
+    services.logger.warn({ err: error, dependency }, 'readiness check failed');
+    return { ok: false, latencyMs: Math.round(performance.now() - started), error: 'unreachable' };
   }
 }

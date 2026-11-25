@@ -9,13 +9,13 @@ import {
   startWorker,
   type Services,
 } from '@ofl/server-core';
-import { loadDotEnv } from '../modules/process/env';
+import { listenHost, loadDotEnv } from '../modules/process/env';
 import { onShutdownSignal } from '../modules/process/shutdown';
 
 // Outbox worker for the Next.js variant: payment authorization, reservation
 // expiry, refunds, search indexing. Health and metrics on WORKER_HEALTH_PORT (4302).
 
-function startHealthServer(services: Services, port: number) {
+function startHealthServer(services: Services, port: number, host: string) {
   const server = createServer((request, response) => {
     const send = (status: number, body: string, contentType = 'application/json') => {
       response.writeHead(status, { 'content-type': contentType, 'cache-control': 'no-store' });
@@ -38,7 +38,7 @@ function startHealthServer(services: Services, port: number) {
     }
     send(404, JSON.stringify({ error: 'Not found.' }));
   });
-  server.listen(port);
+  server.listen(port, host);
   return server;
 }
 
@@ -48,8 +48,9 @@ async function main(): Promise<void> {
   const workerId = `nextjs-worker-${hostname()}-${process.pid}`;
   const worker = startWorker(services, { workerId });
   const healthPort = Number(process.env.WORKER_HEALTH_PORT ?? 4302);
-  const health = startHealthServer(services, healthPort);
-  services.logger.info({ workerId, healthPort }, 'worker started');
+  const host = listenHost();
+  const health = startHealthServer(services, healthPort, host);
+  services.logger.info({ workerId, healthPort, host }, 'worker started');
 
   onShutdownSignal(async () => {
     // Stop claiming new jobs and finish in-flight ones before closing the pool.

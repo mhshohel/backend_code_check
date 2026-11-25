@@ -10,13 +10,14 @@ import { getServices } from './services';
 import {
   assertCsrfHeader,
   assertRateLimit,
+  assertRateLimitFor,
   assertSameOrigin,
   errorResponse,
   jsonResponse,
   readBodyWithLimit,
   PRIVATE_NO_STORE,
 } from './http/guards';
-import { RATE_LIMITS } from './http/rate-limit';
+import { RATE_LIMITS, loginAccountKey } from './http/rate-limit';
 import { cookieValue } from './http/request-meta';
 import { expiredCookie, serializeCookie } from './http/cookies';
 import { appErrorCode } from './app-error';
@@ -36,6 +37,8 @@ export async function handleLogin(request: Request, meta: RequestMeta): Promise<
   assertRateLimit(request, RATE_LIMITS.login);
   const body = parseJson(await readBodyWithLimit(request));
   if (typeof body !== 'object' || body === null) return errorResponse(400, 'Send a JSON object with email and password.');
+  const attemptedEmail = (body as { email?: unknown }).email;
+  if (typeof attemptedEmail === 'string') assertRateLimitFor(RATE_LIMITS.loginAccount, loginAccountKey(attemptedEmail));
 
   const services = await getServices();
   let result: Awaited<ReturnType<typeof login>>;

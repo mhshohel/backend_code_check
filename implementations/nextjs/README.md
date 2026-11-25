@@ -51,7 +51,7 @@ unit tests only, no database).
 | Catalog, search, product detail | Server Components. They call the application layer **in-process** with `executeOperation` (same schema, resolvers, authorization and DataLoaders as `/api/graphql`, no HTTP round trip). | [`app/(catalog)/page.tsx`](<app/(catalog)/page.tsx>), [`app/products/[slug]/page.tsx`](app/products/[slug]/page.tsx), [`modules/server/data/catalog.ts`](modules/server/data/catalog.ts) |
 | Orders, warehouse, operations pages | Server Components, executed as the signed-in viewer. | [`modules/server/data/`](modules/server/data) |
 | Cart, checkout, cancel, returns, ship, receive, adjust, retry | Client Components that send GraphQL mutations over HTTP to `/api/graphql` through **urql**. | [`modules/checkout/CheckoutPanel.tsx`](modules/checkout/CheckoutPanel.tsx), [`modules/orders/`](modules/orders), [`modules/warehouse/`](modules/warehouse), [`modules/admin/RetryJobButton.tsx`](modules/admin/RetryJobButton.tsx) |
-| Login, logout, admin price change | Server Actions. | [`modules/auth/actions.ts`](modules/auth/actions.ts), [`modules/admin/actions.ts`](modules/admin/actions.ts) |
+| Login, logout, admin price change | Server Actions. The price is parsed on the server from the decimal string to integer cents without floating point ([`price-input.ts`](modules/admin/price-input.ts)). Blank, signed, hex or exponent input and more than two decimals are rejected. | [`modules/auth/actions.ts`](modules/auth/actions.ts), [`modules/admin/actions.ts`](modules/admin/actions.ts) |
 | Live order status | Client subscription (urql + graphql-ws) to the realtime service. | [`modules/orders/OrderLiveView.tsx`](modules/orders/OrderLiveView.tsx) |
 
 The `Services` instance (PostgreSQL pool, Elasticsearch client, logger,
@@ -227,15 +227,41 @@ Shared guards are in
 [`modules/server/http/guards.ts`](modules/server/http/guards.ts):
 
 - **CSRF header**: `x-ofl-csrf: 1` is required.
-- **Same-origin only**: a present foreign `Origin` gets 403. No
-  `Access-Control-Allow-*` header is ever sent, and `OPTIONS` preflights get
-  403.
+- **Same-origin only, no CORS**: `/api/*` accepts a request when `Origin`
+  is absent, equals the request's own origin, or is listed in `APP_ORIGIN`.
+  Any other origin gets 403.
+  - `APP_ORIGIN` lists other public origins of **this** app, for example
+    the hostname a reverse proxy serves it under. It does not name
+    third-party CORS clients.
+  - No `Access-Control-Allow-*` header is ever sent, and every `OPTIONS`
+    preflight gets 403. Browsers only preflight cross-origin requests, and
+    none are supported.
+  - For the realtime WebSocket, the same `APP_ORIGIN` list extends the
+    allowlist.
 - **Body limit**: 100 KB. A declared `Content-Length` over the limit is
   rejected at once; otherwise the stream is counted while it is read. Server
   Actions use `serverActions.bodySizeLimit: '100kb'`.
 - **Rate limits**
   ([`rate-limit.ts`](modules/server/http/rate-limit.ts)): fixed windows of
-  login 10/min, GraphQL 300/min and webhook 120/min per client IP.
+  login 10/min, GraphQL 300/min and webhook 120/min per client, plus login
+  10/min **per account** (normalized email).
+  - Who "the client" is
+    ([`request-meta.ts`](modules/server/http/request-meta.ts)): route
+    handlers and Server Actions get no socket, only headers. `next start`
+    sets `X-Forwarded-For` to the socket address only when the client did
+    not send one (`??=` in Next's base server), so the header is
+    attacker-controlled.
+  - With `TRUST_PROXY=true` (exactly one trusted proxy that appends the
+    connecting address), the key is the **right-most** `X-Forwarded-For`
+    entry.
+  - Otherwise (the default), there is no trustworthy client IP, so each
+    route uses **one shared bucket**. Rotating the header cannot reset a
+    counter, and the per-account login limit still throttles password
+    guessing.
+  - Regression tests in
+    [`tests/server/route-handlers.test.ts`](tests/server/route-handlers.test.ts)
+    send a rotating `X-Forwarded-For` and still get 429.
+  - Audit rows record an IP only when it is trusted.
 
 [`observed()`](modules/server/http/observe.ts) adds the correlation ID,
 records the HTTP metric, and turns unexpected errors into a generic 500.
@@ -283,6 +309,9 @@ therefore run in a small Node process,
 
 - `startWorker`, plus `/health/live`, `/health/ready` and `/metrics` on port
   4302.
+- The health server and the realtime service bind to `HOST`, which defaults
+  to `127.0.0.1`. Set `HOST=0.0.0.0` only behind a proxy or inside a
+  container network.
 - On SIGTERM it stops claiming jobs and waits for in-flight jobs (`stop()`),
   then closes the health server and the services. A 15-second watchdog
   forces exit
@@ -340,35 +369,44 @@ Elasticsearch (for S13). No worker runs; the suite drives jobs itself. Rate
 limits are disabled only when `NODE_ENV=test` and
 `RATE_LIMIT_DISABLED=true`.
 
-Last full run (`pnpm test`): 10 suites, 79 tests, all passing.
+Last full run (`pnpm test`): 11 suites, 108 tests, all passing.
 
 | File | Tests |
 | --- | --- |
 | acceptance (S1–S14) | 14 |
 | http/pages | 10 |
-| server/route-handlers | 13 |
-| component: cart | 6 |
+| server/route-handlers (incl. X-Forwarded-For and per-account rate-limit regressions) | 16 |
+| server/price-input (strict decimal parsing) | 23 |
+| server/http-guards | 14 |
+| server/search-params | 4 |
+| server/checkout-attempt | 2 |
 | component: checkout | 8 |
-| component: search filters | 5 |
+| component: cart | 6 |
 | component: role controls | 6 |
-| server unit tests | 17 |
+| component: search filters | 5 |
 
 ## Limitations
 
 - **Rate limits are per process.** Each Next.js instance (and each `next
   start` worker) counts on its own, so N instances allow N times the limit. A
-  hard global limit needs a shared store (PostgreSQL or Redis). The client IP
-  comes from `x-forwarded-for`, which a reverse proxy must overwrite.
+  hard global limit needs a shared store (PostgreSQL or Redis).
+- **Without `TRUST_PROXY=true`, limits are shared by all clients.** One busy
+  or hostile client can exhaust a route's budget for everyone; that is the
+  safe failure mode, because per-client keys would be spoofable. Production
+  deployments should run behind one proxy that appends the client address,
+  and set `TRUST_PROXY=true`.
 - **CSP keeps `'unsafe-inline'` for scripts.** A nonce-based CSP would need
   `proxy.ts` to set a fresh nonce per request. The trade-off is documented in
   `next.config.ts`; every other directive is locked down.
 - **Two hosts for live updates.** The realtime service runs on its own port.
   Behind a proxy, route `/graphql` WebSocket upgrades to it and set
   `REALTIME_PUBLIC_URL` and `APP_ORIGIN`.
-- **An open WebSocket keeps the identity it connected with.** After logout,
-  an already-open socket is closed by the client within a few seconds once no
-  subscription remains (`lazyCloseTimeout`). The next connection re-reads
-  the cookie.
+- **WebSocket sessions are rechecked, not pushed.** The shared
+  `graphqlWsServerOptions` re-resolves the session on every subscribe and
+  checks it before each emitted event, so a subscription ends after logout at
+  the next order event. Only subscriptions are served over WebSocket; queries
+  and mutations must use HTTP (and its rate limit). The realtime upgrade itself
+  has no rate limit.
 - **Search staleness.** Search shows the Elasticsearch snapshot (plus up to
   15 s of data cache). The product page and checkout always use PostgreSQL.
 - **Metrics are unauthenticated.** Expose `/api/metrics` and port 4302 only

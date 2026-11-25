@@ -3,21 +3,43 @@ import { correlationIdFrom, type RequestMeta } from '@ofl/server-core';
 export const CORRELATION_HEADER = 'x-correlation-id';
 
 /**
- * Client IP for rate limiting and audit. `next start` sets x-forwarded-for
- * from the socket address; behind a reverse proxy the proxy must overwrite
- * (not append to) this header, otherwise clients could choose their own key.
+ * Next.js route handlers and Server Actions get no socket, only headers.
+ * `next start` fills X-Forwarded-For with the socket address only when the
+ * client did not send the header (`??=`), so without a trusted proxy the
+ * header is attacker-controlled and cannot identify a client.
+ *
+ * - TRUST_PROXY=true: exactly one trusted reverse proxy sits in front of the
+ *   app and appends the connecting address; the right-most entry is the one
+ *   it added, so that entry is the client IP.
+ * - otherwise (default): there is no trustworthy client IP. Rate limits then
+ *   use one shared bucket per route, and login also has a per-account limit.
  */
-export function clientIpFrom(headers: Headers): string {
-  const forwarded = headers.get('x-forwarded-for');
-  const first = forwarded?.split(',')[0]?.trim();
-  if (first) return first;
-  return headers.get('x-real-ip')?.trim() || 'unknown';
+export function trustProxy(env: Record<string, string | undefined> = process.env): boolean {
+  return env.TRUST_PROXY === 'true';
+}
+
+export function trustedClientIp(headers: Headers, env: Record<string, string | undefined> = process.env): string | null {
+  if (!trustProxy(env)) return null;
+  const entries = (headers.get('x-forwarded-for') ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return entries.at(-1) ?? null;
+}
+
+/** Shared bucket used when no client IP can be trusted. */
+export const SHARED_CLIENT_KEY = 'all-clients';
+
+export function rateLimitKeyFrom(headers: Headers, env: Record<string, string | undefined> = process.env): string {
+  return trustedClientIp(headers, env) ?? SHARED_CLIENT_KEY;
 }
 
 export function requestMetaFrom(headers: Headers): RequestMeta {
+  const ip = trustedClientIp(headers);
   return {
     correlationId: correlationIdFrom(headers.get(CORRELATION_HEADER)),
-    ip: clientIpFrom(headers),
+    // Audit rows only record an IP we can vouch for.
+    ...(ip ? { ip } : {}),
   };
 }
 

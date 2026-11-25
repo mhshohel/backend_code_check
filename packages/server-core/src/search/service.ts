@@ -4,7 +4,7 @@ import { badInput } from '@ofl/domain';
 import type { AppConfig } from '../config';
 import type { Db, Queryable } from '../db/db';
 import type { Logger } from '../observability/logger';
-import { createSearchClient, isConnectivityError, isIndexMissing, searchUnavailable } from './client';
+import { createSearchClient, isBadRequest, isConnectivityError, isIndexMissing, searchUnavailable } from './client';
 import { loadDocumentBatch, loadProductDocuments, type LoadedDocument } from './documents';
 import { INDEX_MAPPINGS, INDEX_SETTINGS, PRICE_RANGES } from './index-definition';
 import {
@@ -86,12 +86,14 @@ export function createSearchService(config: AppConfig, logger: Logger): SearchSe
       throw badInput(`first must be between 1 and ${MAX_SEARCH_PAGE}.`, [{ path: 'first', message: `Must be between 1 and ${MAX_SEARCH_PAGE}.` }]);
     }
     const normalized = normalizeSearchInput(input);
-    const request = buildSearchRequest(normalized, { first, after: decodeSearchCursor(after) });
+    const sort = normalized.sort ?? 'RELEVANCE';
+    const request = buildSearchRequest(normalized, { first, after: decodeSearchCursor(after, sort) });
 
     let response: estypes.SearchResponse<unknown>;
     try {
       response = await client.search<unknown>({ index: alias, ...request }, SEARCH_TIMEOUT);
     } catch (error) {
+      if (after && isBadRequest(error)) throw badInput('The cursor is not valid.', [{ path: 'after', message: 'Invalid cursor.' }]);
       throw toSearchError(error);
     }
 
@@ -108,7 +110,7 @@ export function createSearchService(config: AppConfig, logger: Logger): SearchSe
         fromPriceMinor: source.minPriceMinor,
         inStock: source.inStock,
         score: typeof hit._score === 'number' ? hit._score : null,
-        cursor: encodeSearchCursor(hit.sort ?? []),
+        cursor: encodeSearchCursor(sort, hit.sort ?? []),
       };
     });
     const total = response.hits.total;

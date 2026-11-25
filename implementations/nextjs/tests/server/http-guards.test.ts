@@ -7,7 +7,7 @@ import {
   withGuards,
 } from '@/modules/server/http/guards';
 import { FixedWindowRateLimiter, rateLimitingDisabled } from '@/modules/server/http/rate-limit';
-import { clientIpFrom, cookieValue } from '@/modules/server/http/request-meta';
+import { SHARED_CLIENT_KEY, cookieValue, rateLimitKeyFrom, requestMetaFrom, trustedClientIp } from '@/modules/server/http/request-meta';
 import { expiredCookie, serializeCookie } from '@/modules/server/http/cookies';
 import { isAllowedOrigin } from '@/modules/realtime/origin';
 import { safeReturnPath } from '@/modules/auth/return-path';
@@ -86,9 +86,25 @@ describe('rate limiter', () => {
 });
 
 describe('request helpers', () => {
-  it('reads the first forwarded IP and cookies', () => {
-    expect(clientIpFrom(new Headers({ 'x-forwarded-for': '10.0.0.1, 10.0.0.2' }))).toBe('10.0.0.1');
-    expect(clientIpFrom(new Headers())).toBe('unknown');
+  it('ignores X-Forwarded-For unless a trusted proxy is configured', () => {
+    const spoofed = new Headers({ 'x-forwarded-for': '6.6.6.6' });
+    expect(trustedClientIp(spoofed, {})).toBeNull();
+    expect(rateLimitKeyFrom(spoofed, {})).toBe(SHARED_CLIENT_KEY);
+    expect(rateLimitKeyFrom(new Headers({ 'x-forwarded-for': '7.7.7.7' }), { TRUST_PROXY: 'false' })).toBe(SHARED_CLIENT_KEY);
+  });
+
+  it('uses the right-most entry (added by the trusted proxy) when TRUST_PROXY=true', () => {
+    const headers = new Headers({ 'x-forwarded-for': '6.6.6.6, 10.0.0.9' });
+    expect(trustedClientIp(headers, { TRUST_PROXY: 'true' })).toBe('10.0.0.9');
+    expect(rateLimitKeyFrom(new Headers(), { TRUST_PROXY: 'true' })).toBe(SHARED_CLIENT_KEY);
+  });
+
+  it('records only a trusted IP in request metadata', () => {
+    delete process.env.TRUST_PROXY;
+    expect(requestMetaFrom(new Headers({ 'x-forwarded-for': '6.6.6.6' })).ip).toBeUndefined();
+  });
+
+  it('reads cookies', () => {
     expect(cookieValue('a=1; ofl_session=abc%20d; b=2', 'ofl_session')).toBe('abc d');
     expect(cookieValue(undefined, 'ofl_session')).toBeUndefined();
   });

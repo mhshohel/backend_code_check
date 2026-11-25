@@ -1,5 +1,7 @@
 import {
+  assertTransition,
   checkReturnQuantities,
+  RETURN_TRANSITIONS,
   forbidden,
   isReturnableStatus,
   isStaff,
@@ -139,6 +141,7 @@ export async function receiveReturn(services: Services, viewer: SessionUser | nu
     const row = current.rows[0];
     if (!row) throw notFound('Return');
     if (row.status !== 'REQUESTED') return { kind: 'not_receivable', status: row.status };
+    assertTransition('Return', RETURN_TRANSITIONS, row.status, 'RECEIVED');
 
     const lines = await tx.query<ReturnLineRow>(
       `SELECT rl.order_line_id AS "orderLineId", l.sku_id AS "skuId", rl.warehouse_id AS "warehouseId", rl.quantity

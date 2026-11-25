@@ -78,18 +78,35 @@ export async function enqueueEvents(tx: Tx, events: readonly OutboxEventInput[])
 
 export type ClaimOptions = { workerId: string; limit: number; now: Date; leaseMs?: number; jobIds?: readonly string[] };
 
+export const LEASE_EXHAUSTED_ERROR = 'lease expired after max attempts';
+
 /**
  * Claims up to `limit` jobs. SKIP LOCKED lets concurrent workers pass over
  * rows another worker is claiming, so a job is never claimed twice at once.
  * A PROCESSING row whose lease has expired belongs to a crashed worker and
- * is claimable again; `attempts` counts every claim.
+ * is claimable again; `attempts` counts every claim. A crashed job that has
+ * used all its attempts goes to FAILED instead: a payload that kills the
+ * worker process must not be retried forever.
  */
 export async function claimJobs(db: Queryable, options: ClaimOptions): Promise<JobRow[]> {
   const leaseUntil = new Date(options.now.getTime() + (options.leaseMs ?? LEASE_MS));
+  const jobIds = options.jobIds ? [...options.jobIds] : null;
+  await db.query(
+    `UPDATE outbox_events
+     SET status = 'FAILED', last_error = $2, locked_by = NULL, lease_expires_at = NULL
+     WHERE id IN (
+       SELECT id FROM outbox_events
+       WHERE status = 'PROCESSING' AND lease_expires_at < $1 AND attempts >= max_attempts
+         AND ($3::bigint[] IS NULL OR id = ANY($3::bigint[]))
+       FOR UPDATE SKIP LOCKED
+     )`,
+    [options.now, LEASE_EXHAUSTED_ERROR, jobIds],
+  );
   const result = await db.query<JobRow>(
     `WITH next AS (
        SELECT id FROM outbox_events
-       WHERE ((status = 'PENDING' AND available_at <= $1) OR (status = 'PROCESSING' AND lease_expires_at < $1))
+       WHERE ((status = 'PENDING' AND available_at <= $1)
+              OR (status = 'PROCESSING' AND lease_expires_at < $1 AND attempts < max_attempts))
          AND ($5::bigint[] IS NULL OR id = ANY($5::bigint[]))
        ORDER BY available_at, id
        LIMIT $2
@@ -99,7 +116,7 @@ export async function claimJobs(db: Queryable, options: ClaimOptions): Promise<J
      SET status = 'PROCESSING', attempts = o.attempts + 1, locked_by = $3, lease_expires_at = $4
      FROM next WHERE o.id = next.id
      RETURNING ${jobColumns('o')}`,
-    [options.now, options.limit, options.workerId, leaseUntil, options.jobIds ? [...options.jobIds] : null],
+    [options.now, options.limit, options.workerId, leaseUntil, jobIds],
   );
   return result.rows;
 }

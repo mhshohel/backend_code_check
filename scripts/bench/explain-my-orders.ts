@@ -24,8 +24,17 @@ const RUNS = 30;
 
 type Measurement = { label: string; plan: string; p50: number; p95: number };
 
-const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+const BENCH_DATABASE = 'ofl_bench';
+
+const client = new pg.Client({ connectionString: process.env.DATABASE_URL ?? `postgresql://localhost:5432/${BENCH_DATABASE}` });
 await client.connect();
+
+// This script drops and recreates indexes, so it refuses any other database.
+const connectedTo = (await client.query<{ db: string }>('SELECT current_database() AS db')).rows[0]?.db;
+if (connectedTo !== BENCH_DATABASE) {
+  await client.end();
+  throw new Error(`Refusing to run against "${connectedTo}". Point DATABASE_URL at ${BENCH_DATABASE}.`);
+}
 
 async function heaviestCustomer(): Promise<{ id: string; orders: number }> {
   const result = await client.query<{ id: string; orders: string }>(
@@ -81,9 +90,14 @@ try {
   const firstPage = [customer.id, null, null, false, null, null, 21];
   const deepPage = [customer.id, null, null, false, cursor.createdAt, cursor.id, 21];
 
-  await useBeforeIndexes();
-  const before = [await measure('before: first page', firstPage), await measure('before: page after 2000 orders', deepPage)];
-  await useAfterIndexes();
+  let before: Measurement[];
+  try {
+    await useBeforeIndexes();
+    before = [await measure('before: first page', firstPage), await measure('before: page after 2000 orders', deepPage)];
+  } finally {
+    // Always return to the migrated state (0002), even if a measurement fails.
+    await useAfterIndexes();
+  }
   const after = [await measure('after: first page', firstPage), await measure('after: page after 2000 orders', deepPage)];
 
   const rows = [...before, ...after]

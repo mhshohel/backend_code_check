@@ -79,6 +79,30 @@ describe('worker', () => {
     expect(await scalar<number>(services, 'SELECT count(*)::int AS value FROM payment_events')).toBe(1);
   });
 
+  it('F2: a job that crashes the worker on every attempt goes to FAILED after max attempts', async () => {
+    const sku = await createSku(services, base, { east: 5 });
+    const order = await placeOrder(services, base.customer, [{ sku, quantity: 1 }]);
+    const [jobId] = await jobIdsFor(services, 'payment.authorize', order.orderId);
+    if (!jobId) throw new Error('no job');
+    const crash = new Error('crash');
+    const faults = {
+      afterSideEffect: () => {
+        throw crash;
+      },
+    };
+    for (let attempt = 1; attempt <= 8; attempt += 1) {
+      await expect(runWorkerUntilIdle(services, { jobIds: [jobId], faults })).rejects.toBe(crash);
+      expect(await job(jobId)).toMatchObject({ status: 'PROCESSING', attempts: attempt });
+      clock.advanceMs(31_000);
+    }
+    expect(await runWorkerUntilIdle(services, { jobIds: [jobId], faults })).toBe(0);
+    const failed = await services.db.query<{ status: string; attempts: number; last_error: string }>(
+      'SELECT status, attempts, last_error FROM outbox_events WHERE id = $1',
+      [jobId],
+    );
+    expect(failed.rows[0]).toEqual({ status: 'FAILED', attempts: 8, last_error: 'lease expired after max attempts' });
+  });
+
   it('a duplicate delivery of the same job (two outbox rows) has one effect', async () => {
     const sku = await createSku(services, base, { east: 5 });
     const order = await placeOrder(services, base.customer, [{ sku, quantity: 1 }]);

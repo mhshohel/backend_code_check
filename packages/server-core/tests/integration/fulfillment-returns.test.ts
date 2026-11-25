@@ -1,5 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from '@jest/globals';
+import { InvalidTransitionError } from '@ofl/domain';
 import { shipOrder } from '../../src/features/fulfillment/operations';
+import { assertReservationTransitions, updateOrderStatus } from '../../src/features/orders/records';
 import { receiveReturn, requestReturn } from '../../src/features/returns/operations';
 import type { Services } from '../../src/services';
 import { runWorkerUntilIdle } from '../../src/worker/worker';
@@ -59,6 +61,19 @@ describe('shipping', () => {
       { warehouse: WAREHOUSE_EAST, delta: -2 },
       { warehouse: WAREHOUSE_WEST, delta: -2 },
     ]);
+  });
+
+  it('enforces the order and reservation state machines on writes', async () => {
+    const sku = await createSku(services, base, { east: 5 });
+    const order = await placeOrder(services, base.customer, [{ sku, quantity: 1 }]);
+    await authorize(services, order);
+    await shipOrder(services, base.operator, { orderId: order.orderId, warehouseId: WAREHOUSE_EAST }, meta());
+    await expect(
+      services.db.transaction((tx) => updateOrderStatus(tx, { id: order.orderId, status: 'SHIPPED' }, 'CANCELLED', 'OPERATOR_REQUEST')),
+    ).rejects.toBeInstanceOf(InvalidTransitionError);
+    expect((await orderState(services, order.orderId)).status).toBe('SHIPPED');
+    expect(() => assertReservationTransitions([{ status: 'SHIPPED' }], 'RELEASED')).toThrow(InvalidTransitionError);
+    expect(() => assertReservationTransitions([{ status: 'ACTIVE' }], 'SHIPPED')).toThrow(InvalidTransitionError);
   });
 
   it('a repeated ship from a warehouse with nothing left returns NothingToShip; concurrent ships ship once', async () => {

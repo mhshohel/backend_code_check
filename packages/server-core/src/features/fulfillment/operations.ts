@@ -6,7 +6,7 @@ import type { RequestMeta, SessionUser } from '../auth/sessions';
 import { enqueueSearchUpdateForSkus } from '../catalog/search-events';
 import { applyStockChanges, lockBalancesForSkus } from '../inventory/ledger';
 import { recordOrderChanged } from '../orders/events';
-import { lockOrder, RESERVATION_COLUMNS, type ReservationRecord } from '../orders/records';
+import { assertReservationTransitions, lockOrder, RESERVATION_COLUMNS, updateOrderStatus, type ReservationRecord } from '../orders/records';
 
 export type ShipOrderOutcome =
   | { kind: 'shipped'; shipmentId: string; orderId: string }
@@ -32,6 +32,7 @@ export async function shipOrder(services: Services, viewer: SessionUser | null, 
       [order.id, request.warehouseId],
     );
     if (confirmed.rows.length === 0) return { kind: 'nothing_to_ship' };
+    assertReservationTransitions(confirmed.rows, 'SHIPPED');
 
     // UNIQUE (order_id, warehouse_id): a second shipment from the same
     // warehouse cannot exist even if the status checks above were bypassed.
@@ -75,7 +76,7 @@ export async function shipOrder(services: Services, viewer: SessionUser | null, 
       [order.id],
     );
     const status = orderStatusAfterShipment(remaining.rows[0]?.count ?? 0);
-    await tx.query('UPDATE orders SET status = $2, updated_at = now() WHERE id = $1', [order.id, status]);
+    await updateOrderStatus(tx, order, status);
     await enqueueSearchUpdateForSkus(
       tx,
       confirmed.rows.map((r) => r.skuId),

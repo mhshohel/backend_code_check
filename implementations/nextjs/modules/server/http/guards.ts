@@ -1,5 +1,5 @@
 import { checkRateLimit, type RateLimitRule } from './rate-limit';
-import { clientIpFrom } from './request-meta';
+import { rateLimitKeyFrom } from './request-meta';
 
 export const BODY_LIMIT_BYTES = 100 * 1024;
 export const CSRF_HEADER = 'x-ofl-csrf';
@@ -52,8 +52,13 @@ export function assertSameOrigin(request: Request): void {
   throw new GuardRejection(errorResponse(403, 'Cross-origin requests are not allowed.'));
 }
 
+/** Limits by client (trusted IP, or the shared bucket when no proxy is trusted). */
 export function assertRateLimit(request: Request, rule: RateLimitRule): void {
-  const decision = checkRateLimit(rule, clientIpFrom(request.headers));
+  assertRateLimitFor(rule, rateLimitKeyFrom(request.headers));
+}
+
+export function assertRateLimitFor(rule: RateLimitRule, key: string): void {
+  const decision = checkRateLimit(rule, key);
   if (decision.allowed) return;
   throw new GuardRejection(
     errorResponse(429, 'Too many requests. Try again later.', { 'Retry-After': String(decision.retryAfterSeconds) }),

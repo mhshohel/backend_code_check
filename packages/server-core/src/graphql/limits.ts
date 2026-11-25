@@ -23,6 +23,11 @@ import {
 
 export const MAX_DEPTH = 10;
 export const MAX_COST = 5000;
+/** Root fields per operation, aliases counted separately. Stops alias fan-out. */
+export const MAX_ROOT_FIELDS = 20;
+/** Base cost of every root field and every paged field (`first`/`limit`): each one is a query of its own. */
+export const ROOT_FIELD_COST = 10;
+export const PAGED_FIELD_COST = 10;
 /** Assumed size of a list field without a `first`/`limit` argument (order lines, SKUs, ...). */
 export const UNBOUNDED_LIST_SIZE = 5;
 const DEFAULT_PAGE = 20;
@@ -78,11 +83,18 @@ function selectionDepth(selectionSet: SelectionSetNode, fragments: ReadonlyMap<s
 }
 
 /**
- * Static cost estimate with variables applied. Each composite field costs 1;
- * scalars cost 0. A field with a `first` or `limit` argument multiplies the
- * cost of its subtree by that value (default 20); any other list field
- * multiplies by UNBOUNDED_LIST_SIZE. So `orders(first: 50) { lines { sku } }`
- * costs 1 + 50 * (1 + 1 + 5 * (1 + 1)).
+ * Static cost estimate with variables applied (docs/graphql-design.md §5).
+ * - Every root field costs at least ROOT_FIELD_COST, scalar or not, and
+ *   each alias counts separately: a root field is a resolver doing real work.
+ * - A field with a `first` or `limit` argument costs PAGED_FIELD_COST plus
+ *   that value (default 20) times the cost of its subtree.
+ * - `edges` of a connection is already bounded by the connection's `first`,
+ *   so it is not multiplied again; any other list field multiplies its
+ *   subtree by UNBOUNDED_LIST_SIZE.
+ * - Other composite fields cost 1 plus their subtree; scalars cost 0.
+ *
+ * Deviation from the design doc: unbounded lists use 5, not 50. With 50 the
+ * real OperatorOrders page (orders -> lines, reservations) would exceed the limit.
  */
 export function estimateCost(
   schema: GraphQLSchema,
@@ -106,10 +118,11 @@ export function estimateCost(
         ? schema.getMutationType()
         : schema.getSubscriptionType();
   if (!root) return 0;
-  return selectionCost(operation.selectionSet, root, { schema, fragments, variables: variables ?? {} }, new Set());
+  return selectionCost(operation.selectionSet, root, { schema, fragments, variables: variables ?? {}, rootType: root }, new Set());
 }
 
 type CostContext = {
+  rootType: GraphQLCompositeType;
   schema: GraphQLSchema;
   fragments: ReadonlyMap<string, FragmentDefinitionNode>;
   variables: Readonly<Record<string, unknown>>;
@@ -139,25 +152,63 @@ function selectionCost(selectionSet: SelectionSetNode, parentType: GraphQLCompos
 }
 
 function fieldCost(node: FieldNode, parentType: GraphQLCompositeType, ctx: CostContext, visiting: Set<string>): number {
-  if (!node.selectionSet) return 0;
-  if (!isObjectType(parentType) && !isInterfaceType(parentType)) return 0;
+  if (node.name.value === '__typename') return 0;
+  const isRoot = parentType === ctx.rootType;
+  const base = isRoot ? ROOT_FIELD_COST : 0;
+  if (!isObjectType(parentType) && !isInterfaceType(parentType)) return base;
   const field: GraphQLField<unknown, unknown> | undefined = parentType.getFields()[node.name.value];
-  if (!field) return 0;
+  if (!field) return base;
   const named = getNamedType(field.type);
-  if (!isCompositeType(named)) return 0;
+  if (!node.selectionSet || !isCompositeType(named)) return base;
 
   const children = selectionCost(node.selectionSet, named, ctx, visiting);
-  return 1 + multiplier(node, field, ctx) * children;
+  const size = pageSizeArgument(node, field, ctx);
+  if (size !== null) return Math.max(base, PAGED_FIELD_COST) + size * children;
+  const listFactor = isListType(getNullableType(field.type)) && !isConnectionEdges(parentType, node) ? UNBOUNDED_LIST_SIZE : 1;
+  return Math.max(base, 1) + listFactor * children;
 }
 
-function multiplier(node: FieldNode, field: GraphQLField<unknown, unknown>, ctx: CostContext): number {
+function isConnectionEdges(parentType: GraphQLCompositeType, node: FieldNode): boolean {
+  return parentType.name.endsWith('Connection') && node.name.value === 'edges';
+}
+
+function pageSizeArgument(node: FieldNode, field: GraphQLField<unknown, unknown>, ctx: CostContext): number | null {
   const sizeArg = field.args.find((arg) => arg.name === 'first' || arg.name === 'limit');
-  if (sizeArg) {
-    const supplied = node.arguments?.find((arg) => arg.name.value === sizeArg.name);
-    const value = supplied ? numericValue(supplied.value, ctx.variables) : null;
-    return Math.max(1, value ?? DEFAULT_PAGE);
+  if (!sizeArg) return null;
+  const supplied = node.arguments?.find((arg) => arg.name.value === sizeArg.name);
+  const value = supplied ? numericValue(supplied.value, ctx.variables) : null;
+  return Math.max(1, value ?? DEFAULT_PAGE);
+}
+
+/** Root fields of the operation after expanding fragments; every alias counts. */
+export function countRootFields(document: DocumentNode, operationName: string | null | undefined): number {
+  const fragments = new Map<string, FragmentDefinitionNode>();
+  let operation: OperationDefinitionNode | undefined;
+  for (const definition of document.definitions) {
+    if (definition.kind === Kind.FRAGMENT_DEFINITION) fragments.set(definition.name.value, definition);
+    if (definition.kind === Kind.OPERATION_DEFINITION && (!operationName || definition.name?.value === operationName)) {
+      operation ??= definition;
+    }
   }
-  return isListType(getNullableType(field.type)) ? UNBOUNDED_LIST_SIZE : 1;
+  if (!operation) return 0;
+  const count = (selectionSet: SelectionSetNode, visiting: Set<string>): number => {
+    let total = 0;
+    for (const selection of selectionSet.selections) {
+      if (selection.kind === Kind.FIELD) {
+        if (selection.name.value !== '__typename') total += 1;
+      } else if (selection.kind === Kind.INLINE_FRAGMENT) {
+        total += count(selection.selectionSet, visiting);
+      } else {
+        const fragment = fragments.get(selection.name.value);
+        if (!fragment || visiting.has(fragment.name.value)) continue;
+        visiting.add(fragment.name.value);
+        total += count(fragment.selectionSet, visiting);
+        visiting.delete(fragment.name.value);
+      }
+    }
+    return total;
+  };
+  return count(operation.selectionSet, new Set());
 }
 
 function numericValue(value: ValueNode, variables: Readonly<Record<string, unknown>>): number | null {
@@ -169,7 +220,7 @@ function numericValue(value: ValueNode, variables: Readonly<Record<string, unkno
   return null;
 }
 
-/** Returns a QUERY_TOO_COMPLEX error when the estimate exceeds the limit, else null. */
+/** Returns a QUERY_TOO_COMPLEX error when the operation has too many root fields or costs too much, else null. */
 export function checkQueryCost(
   schema: GraphQLSchema,
   document: DocumentNode,
@@ -177,6 +228,10 @@ export function checkQueryCost(
   variables: Readonly<Record<string, unknown>> | null | undefined,
   maxCost: number = MAX_COST,
 ): GraphQLError | null {
+  const rootFields = countRootFields(document, operationName);
+  if (rootFields > MAX_ROOT_FIELDS) {
+    return queryTooComplex(`The operation selects ${rootFields} root fields; the maximum is ${MAX_ROOT_FIELDS}.`);
+  }
   const cost = estimateCost(schema, document, operationName, variables);
   return cost > maxCost ? queryTooComplex(`Query cost ${cost} exceeds the maximum of ${maxCost}.`) : null;
 }

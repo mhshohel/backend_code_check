@@ -1,4 +1,13 @@
-import type { CancellationReason, OrderStatus, PaymentStatus, ReservationStatus, ReturnStatus } from '@ofl/domain';
+import {
+  assertTransition,
+  ORDER_TRANSITIONS,
+  RESERVATION_TRANSITIONS,
+  type CancellationReason,
+  type OrderStatus,
+  type PaymentStatus,
+  type ReservationStatus,
+  type ReturnStatus,
+} from '@ofl/domain';
 import type { Queryable, Tx } from '../../db/db';
 
 export type OrderRecord = {
@@ -100,15 +109,25 @@ export async function findPaymentForOrder(db: Queryable, orderId: string): Promi
   return result.rows[0] ?? null;
 }
 
+/**
+ * The only way order status changes. The caller holds the order lock and
+ * passes the status it read under that lock; an illegal transition throws
+ * (and rolls the transaction back) instead of being written.
+ */
 export async function updateOrderStatus(
   tx: Tx,
-  orderId: string,
+  order: Pick<OrderRecord, 'id' | 'status'>,
   status: OrderStatus,
   cancellationReason: CancellationReason | null = null,
 ): Promise<void> {
+  if (order.status !== status) assertTransition('Order', ORDER_TRANSITIONS, order.status, status);
   await tx.query('UPDATE orders SET status = $2, cancellation_reason = $3, updated_at = now() WHERE id = $1', [
-    orderId,
+    order.id,
     status,
     cancellationReason,
   ]);
+}
+
+export function assertReservationTransitions(reservations: readonly Pick<ReservationRecord, 'status'>[], to: ReservationStatus): void {
+  for (const reservation of reservations) assertTransition('Reservation', RESERVATION_TRANSITIONS, reservation.status, to);
 }

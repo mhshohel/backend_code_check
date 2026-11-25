@@ -56,7 +56,7 @@ export async function runLoad(options: LoadOptions): Promise<LoadResult> {
     while (performance.now() < stopAt) {
       const request = options.nextRequest(workerIndex, sequence++);
       const sentAt = performance.now();
-      let ok = false;
+      let ok: boolean;
       try {
         const response = await fetch(request.url, request.init);
         const body = await response.text();

@@ -1,4 +1,4 @@
-import { forbidden, isStaff, notFound, unauthenticated, uuidSchema } from '@ofl/domain';
+import { badInput, forbidden, isStaff, notFound, unauthenticated, uuidSchema } from '@ofl/domain';
 import type { SessionUser } from './sessions';
 
 export function requireViewer(viewer: SessionUser | null): SessionUser {
@@ -32,5 +32,14 @@ export function canViewOrder(viewer: SessionUser, order: { customerId: string })
 /** An id that is not a UUID cannot exist; report it like any other missing object. */
 export function parseEntityId(value: string, what: string): string {
   if (!uuidSchema.safeParse(value).success) throw notFound(what);
+  return value;
+}
+
+/** Filter arguments that must be ids: a malformed value is bad input, not a missing object. */
+export function parseIdArgument(value: string, path: string): string;
+export function parseIdArgument(value: string | null | undefined, path: string): string | null;
+export function parseIdArgument(value: string | null | undefined, path: string): string | null {
+  if (value === null || value === undefined) return null;
+  if (!uuidSchema.safeParse(value).success) throw badInput('The id is not valid.', [{ path, message: 'Must be a valid ID.' }]);
   return value;
 }

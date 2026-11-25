@@ -2,14 +2,33 @@ import { createGraphQLContext, graphqlYogaPlugins, QUERY_COUNT_HEADER, type Serv
 import express, { Router, type Request, type RequestHandler, type Response } from 'express';
 import type { GraphQLSchema } from 'graphql';
 import { createYoga } from 'graphql-yoga';
+import { sendGraphQLError } from '../http-errors';
 import { requireCsrfHeader } from '../middleware/csrf';
 import { requestMeta } from '../request-meta';
 
 type ExpressContext = { req: Request; res: Response };
 
+// Every JSON media type Yoga accepts (application/json, application/graphql+json, ...).
+const JSON_TYPES = ['application/json', 'application/*+json'];
+
+function hasBody(req: Request): boolean {
+  const length = req.get('content-length');
+  return req.get('transfer-encoding') !== undefined || (length !== undefined && length !== '0');
+}
+
+/**
+ * Yoga reads a body it finds unparsed from the raw stream with its own, much
+ * larger limit. So every body reaching it must already have been parsed by
+ * express.json (100 KB): anything that is not JSON is rejected here with 415.
+ */
+const requireJsonBody: RequestHandler = (req, res, next) => {
+  if (!hasBody(req) || req.is(JSON_TYPES)) return next();
+  sendGraphQLError(res, 415, 'BAD_USER_INPUT', 'GraphQL requests must be sent as JSON.');
+};
+
 /**
  * GraphQL Yoga mounted as Express middleware. express.json parses the body
- * first (enforcing the 100 KB limit); Yoga reuses the parsed req.body.
+ * first (enforcing the 100 KB limit for every JSON type); Yoga reuses req.body.
  */
 export function graphqlRoutes(services: Services, schema: GraphQLSchema, options: { limiter: RequestHandler; bodyLimit: string }): Router {
   const yoga = createYoga<ExpressContext>({
@@ -36,6 +55,13 @@ export function graphqlRoutes(services: Services, schema: GraphQLSchema, options
   const handleGraphQL: RequestHandler = (req, res) => yoga(req, res, { req, res });
 
   const router = Router();
-  router.use('/graphql', options.limiter, requireCsrfHeader('graphql'), express.json({ limit: options.bodyLimit }), handleGraphQL);
+  router.use(
+    '/graphql',
+    options.limiter,
+    requireCsrfHeader('graphql'),
+    requireJsonBody,
+    express.json({ limit: options.bodyLimit, type: JSON_TYPES }),
+    handleGraphQL,
+  );
   return router;
 }

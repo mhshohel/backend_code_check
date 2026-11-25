@@ -11,12 +11,23 @@ describe('classifyError', () => {
     [{ code: 'ECONNRESET' }, 'RETRYABLE'],
     [{ statusCode: 503 }, 'RETRYABLE'],
     [{ meta: { statusCode: 429 } }, 'RETRYABLE'],
+    [{ code: '57P01' }, 'RETRYABLE'],
+    [{ code: '57P02' }, 'RETRYABLE'],
+    [{ code: '57P03' }, 'RETRYABLE'],
+    [{ code: '08003' }, 'RETRYABLE'],
     [{ code: '23505' }, 'PERMANENT'],
     [{ statusCode: 400 }, 'PERMANENT'],
     [{ retryable: false, code: '40001' }, 'PERMANENT'],
     ['boom', 'PERMANENT'],
   ] as const)('%j is %s', (error, expected) => {
     expect(classifyError(error)).toBe(expected);
+  });
+
+  it('treats node-postgres connection loss (no code) as retryable', () => {
+    expect(classifyError(new Error('Connection terminated unexpectedly'))).toBe('RETRYABLE');
+    expect(classifyError(new Error('Connection terminated due to connection timeout'))).toBe('RETRYABLE');
+    expect(classifyError(new Error('timeout exceeded when trying to connect'))).toBe('RETRYABLE');
+    expect(classifyError(new Error('relation "x" does not exist'))).toBe('PERMANENT');
   });
 
   it('detects transaction conflicts for in-request retries', () => {

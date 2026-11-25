@@ -1,5 +1,5 @@
 import { closeServices, createServices, loadConfig } from '@ofl/server-core';
-import { loadDotEnv } from '../process/env';
+import { listenHost, loadDotEnv } from '../process/env';
 import { onShutdownSignal } from '../process/shutdown';
 import { defaultAppOrigins, parseOriginList } from './origin';
 import { startRealtimeServer } from './server';
@@ -12,9 +12,10 @@ async function main(): Promise<void> {
   const server = await startRealtimeServer({
     services,
     port,
+    host: listenHost(),
     allowedOrigins: [...defaultAppOrigins(appPort), ...parseOriginList(process.env.APP_ORIGIN, [])],
   });
-  services.logger.info({ port: server.port }, 'realtime service listening');
+  services.logger.info({ port: server.port, host: listenHost() }, 'realtime service listening');
 
   onShutdownSignal(async () => {
     await server.close();

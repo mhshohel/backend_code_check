@@ -136,7 +136,8 @@ describe('health and metrics', () => {
     try {
       const ready = await checkReadiness(down);
       expect(ready.ok).toBe(true);
-      expect(ready.checks.elasticsearch.ok).toBe(false);
+      expect(ready.checks.elasticsearch).toMatchObject({ ok: false, error: 'unreachable' });
+      expect(JSON.stringify(ready)).not.toContain('127.0.0.1');
     } finally {
       await closeServices(down);
     }

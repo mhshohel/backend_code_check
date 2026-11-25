@@ -35,8 +35,13 @@ Procedure:
 
 ## 3. Commands
 
-See section 4 for the commands that produced each result.
+- `pnpm bench` — HTTP scenarios and worker ([`scripts/bench/run-benchmarks.ts`](../scripts/bench/run-benchmarks.ts)).
+- `DATABASE_URL=.../ofl_bench pnpm bench:explain` — "my orders" before/after migration 0002.
+- `tsx scripts/bench/checkout-profile.ts full|minimal` — checkout transaction vs response cost.
 
 ## 4. Observed results
 
-Pending. This section is filled only with measured values.
+- Load scenarios, targets vs observed, caveats: [README "Benchmark report"](../README.md#benchmark-report) and [`reports/benchmarks.md`](../reports/benchmarks.md).
+- Migration 0002 (keyset index): [`reports/explain-my-orders.md`](../reports/explain-my-orders.md). First measurement with a 5,000-order customer: p50 1.751 → 0.007 ms. The final report ran after extra load runs, when the customer had 26,720 orders: p50 5.374 → 0.009 ms.
+- Migration 0003 (`shipment_lines` index): [`reports/checkout-profile.md`](../reports/checkout-profile.md). Checkout at 50 connections: 108.8 → 1345.8 req/s, p50 414.7 → 36.6 ms.
+- Targets missed: Fastify "my orders" p95 in run 1 (outlier, see README) and worker backlog lag p95 (target unrealistic for a 5,000-job burst).

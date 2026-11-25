@@ -91,7 +91,9 @@ its children. `fastify-plugin` (`fp`) removes the boundary. This server uses
 5. `preValidation` (API scope): POST without `x-ofl-csrf: 1` gets 403. It
    runs before schema validation, so a cross-site request learns nothing
    about the body format.
-6. Schema validation (Ajv) for `POST /auth/login` and `POST /webhooks/payments`.
+6. Schema validation (Ajv) for the `POST /auth/login` body and the webhook
+   signature header (the webhook body is validated by server-core after the
+   signature check).
 7. Handler: one call into `@ofl/server-core`.
 8. `onResponse` (global): `services.metrics.observeHttp` with the route
    pattern (`request.routeOptions.url`) as the label.
@@ -118,10 +120,12 @@ upgrade request and uses `graphqlWsServerOptions` from server-core.
 ### Webhook
 
 [`routes/webhook.ts`](api/routes/webhook.ts) registers a scoped
-`application/json` parser with `parseAs: 'string'`. It stores the exact bytes
-in `request.rawBody` (needed for the HMAC) and returns the parsed object, so
-the JSON schema still validates the shape. `handlePaymentWebhook` checks the
-signature and records the notification.
+`application/json` parser with `parseAs: 'string'` that stores the exact
+bytes in `request.rawBody` (needed for the HMAC) and does not parse them.
+The route has a header schema but no body schema on purpose:
+`handlePaymentWebhook` verifies the signature first and validates the body
+only afterwards, so an unsigned or forged request always gets 401 and never
+learns the body format from a 400.
 
 ### Static SPA and shutdown
 

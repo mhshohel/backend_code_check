@@ -156,7 +156,24 @@ describe('payment webhook', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('rejects malformed JSON and invalid shapes with 400', async () => {
+  // Regression: the signature is checked before the body is parsed or
+  // validated, so unsigned callers learn nothing about the body format.
+  it('answers 401, not 400, for an unsigned or badly signed malformed body', async () => {
+    for (const payload of ['{nope', JSON.stringify({ providerEventId: 'x' })]) {
+      const unsigned = await inject({ method: 'POST', url: '/webhooks/payments', headers: JSON_HEADERS, payload });
+      expect(unsigned.statusCode).toBe(401);
+      expect(JSON.stringify(unsigned.json())).not.toMatch(/providerEventId|required|must have/i);
+      const forged = await inject({
+        method: 'POST',
+        url: '/webhooks/payments',
+        headers: { ...JSON_HEADERS, 'x-ofl-signature': `sha256=${'0'.repeat(64)}` },
+        payload,
+      });
+      expect(forged.statusCode).toBe(401);
+    }
+  });
+
+  it('rejects malformed JSON and invalid shapes with 400 once the signature is valid', async () => {
     const signed = (raw: string) => ({ ...JSON_HEADERS, 'x-ofl-signature': signatureHeader(raw, TEST_WEBHOOK_SECRET) });
     const malformed = await inject({ method: 'POST', url: '/webhooks/payments', headers: signed('{nope'), payload: '{nope' });
     expect(malformed.statusCode).toBe(400);

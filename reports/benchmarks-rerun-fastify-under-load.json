@@ -1,0 +1,102 @@
+{
+  "dataset": "20060 products, 200039 orders, 800303 inventory movements, 42 customers",
+  "reports": [
+    {
+      "variant": "fastify",
+      "loads": [
+        {
+          "name": "fastify: product search",
+          "concurrency": 20,
+          "durationSeconds": 15,
+          "requests": 15114,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 1007.6,
+          "p50Ms": 16.6,
+          "p95Ms": 42,
+          "p99Ms": 59.9,
+          "maxMs": 91.9,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        },
+        {
+          "name": "fastify: my orders first page (customer with 5000 orders)",
+          "concurrency": 20,
+          "durationSeconds": 15,
+          "requests": 14502,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 966.8,
+          "p50Ms": 13.2,
+          "p95Ms": 55.1,
+          "p99Ms": 112.1,
+          "maxMs": 562,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        },
+        {
+          "name": "fastify: checkout, distinct SKUs",
+          "concurrency": 50,
+          "durationSeconds": 15,
+          "requests": 10843,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 722.9,
+          "p50Ms": 41.4,
+          "p95Ms": 158.8,
+          "p99Ms": 671,
+          "maxMs": 1598.6,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        },
+        {
+          "name": "fastify: checkout, one hot SKU",
+          "concurrency": 50,
+          "durationSeconds": 15,
+          "requests": 26257,
+          "errors": 0,
+          "errorRate": 0,
+          "throughputPerSecond": 1750.5,
+          "p50Ms": 20.2,
+          "p95Ms": 93.8,
+          "p99Ms": 149.9,
+          "maxMs": 306.4,
+          "hardware": "Apple M3 Max, 16 logical cores, 64 GiB RAM, Node v26.13.0"
+        }
+      ],
+      "queryCounts": {
+        "5": 10,
+        "20": 10,
+        "50": 10
+      },
+      "hotSku": {
+        "initialAvailable": 2018,
+        "succeeded": 2018,
+        "insufficient": 24289,
+        "finalAvailable": 0
+      },
+      "distinctCheckouts": {
+        "succeeded": 14314,
+        "insufficient": 0
+      },
+      "ledgerDifferences": 0
+    }
+  ],
+  "workers": [
+    {
+      "jobs": 5000,
+      "concurrency": 4,
+      "seconds": 42.4,
+      "jobsPerSecond": 118,
+      "lagP50Ms": 29949,
+      "lagP95Ms": 39463,
+      "failed": 0
+    },
+    {
+      "jobs": 5000,
+      "concurrency": 16,
+      "seconds": 33,
+      "jobsPerSecond": 152,
+      "lagP50Ms": 25046,
+      "lagP95Ms": 32812,
+      "failed": 0
+    }
+  ]
+}

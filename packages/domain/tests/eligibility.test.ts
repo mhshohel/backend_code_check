@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { checkReturnQuantities, isCancellable, isReturnableStatus, returnableQuantity } from '../src/eligibility';
+import { checkReturnQuantities, isCancellable, isReturnableStatus, orderAllowedActions, returnableQuantity } from '../src/eligibility';
 import { isReservationExpired, reservationExpiry } from '../src/reservations';
 
 describe('cancellation eligibility', () => {
@@ -59,5 +59,42 @@ describe('reservation expiration', () => {
     expect(expiresAt.toISOString()).toBe('2026-01-01T00:01:00.000Z');
     expect(isReservationExpired(expiresAt, new Date('2026-01-01T00:00:59.999Z'))).toBe(false);
     expect(isReservationExpired(expiresAt, new Date('2026-01-01T00:01:00.000Z'))).toBe(true);
+  });
+});
+
+describe('orderAllowedActions', () => {
+  const base = {
+    status: 'CONFIRMED' as const,
+    shipmentCount: 0,
+    role: 'CUSTOMER' as const,
+    isOwner: true,
+    returnableUnits: 0,
+    confirmedWarehouseIds: ['east', 'east', 'west'],
+    requestedReturnIds: ['r1'],
+  };
+
+  it('lets the owner cancel before shipping and hides staff actions', () => {
+    expect(orderAllowedActions(base)).toEqual({ canCancel: true, canRequestReturn: false, shippableWarehouseIds: [], receivableReturnIds: [] });
+  });
+
+  it('gives staff ship and receive actions', () => {
+    expect(orderAllowedActions({ ...base, role: 'OPERATOR', isOwner: false })).toEqual({
+      canCancel: true,
+      canRequestReturn: false,
+      shippableWarehouseIds: ['east', 'west'],
+      receivableReturnIds: ['r1'],
+    });
+  });
+
+  it('allows returns only for the owner of a shipped order with returnable units', () => {
+    const shipped = { ...base, status: 'SHIPPED' as const, shipmentCount: 1 };
+    expect(orderAllowedActions({ ...shipped, returnableUnits: 2 })).toMatchObject({ canCancel: false, canRequestReturn: true });
+    expect(orderAllowedActions({ ...shipped, returnableUnits: 0 }).canRequestReturn).toBe(false);
+    expect(orderAllowedActions({ ...shipped, returnableUnits: 2, isOwner: false }).canRequestReturn).toBe(false);
+    expect(orderAllowedActions({ ...shipped, role: 'ADMIN', returnableUnits: 2 }).shippableWarehouseIds).toEqual([]);
+  });
+
+  it('offers nothing to another customer', () => {
+    expect(orderAllowedActions({ ...base, isOwner: false })).toEqual({ canCancel: false, canRequestReturn: false, shippableWarehouseIds: [], receivableReturnIds: [] });
   });
 });

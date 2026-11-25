@@ -56,3 +56,41 @@ export function checkReturnQuantities(
 export function isStaff(role: Role): boolean {
   return role === 'OPERATOR' || role === 'ADMIN';
 }
+
+export type AllowedActionsInput = {
+  readonly status: OrderStatus;
+  readonly shipmentCount: number;
+  readonly role: Role;
+  readonly isOwner: boolean;
+  /** Units shipped and not yet on any return, summed over the order's lines. */
+  readonly returnableUnits: number;
+  /** Warehouses holding CONFIRMED (unshipped) reservations of the order. */
+  readonly confirmedWarehouseIds: readonly string[];
+  /** Returns of the order in REQUESTED status. */
+  readonly requestedReturnIds: readonly string[];
+};
+
+export type AllowedActions = {
+  readonly canCancel: boolean;
+  readonly canRequestReturn: boolean;
+  readonly shippableWarehouseIds: readonly string[];
+  readonly receivableReturnIds: readonly string[];
+};
+
+/**
+ * What the viewer may do with an order, for display. The workflows enforce
+ * the same rules again under the order lock.
+ * - cancel: owner or staff, until the first unit ships;
+ * - request a return: the owning customer, shipped units not yet returned;
+ * - ship / receive: staff only.
+ */
+export function orderAllowedActions(input: AllowedActionsInput): AllowedActions {
+  const staff = isStaff(input.role);
+  const shippable = input.status === 'CONFIRMED' || input.status === 'PARTIALLY_SHIPPED';
+  return {
+    canCancel: (staff || input.isOwner) && isCancellable({ status: input.status, shipmentCount: input.shipmentCount }),
+    canRequestReturn: input.isOwner && !staff && isReturnableStatus(input.status) && input.returnableUnits > 0,
+    shippableWarehouseIds: staff && shippable ? [...new Set(input.confirmedWarehouseIds)] : [],
+    receivableReturnIds: staff ? [...input.requestedReturnIds] : [],
+  };
+}

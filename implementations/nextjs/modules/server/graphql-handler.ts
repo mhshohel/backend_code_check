@@ -20,7 +20,7 @@ import {
   GuardRejection,
 } from './http/guards';
 import { checkRateLimit, RATE_LIMITS } from './http/rate-limit';
-import { clientIpFrom } from './http/request-meta';
+import { rateLimitKeyFrom } from './http/request-meta';
 
 export const GRAPHQL_ENDPOINT = '/api/graphql';
 const QUERY_COUNT_HEADER = 'x-ofl-debug-query-count';
@@ -67,7 +67,7 @@ function rateLimitedResponse(retryAfterSeconds: number): Response {
 export async function handleGraphQLRequest(request: Request, meta: RequestMeta): Promise<Response> {
   assertSameOrigin(request);
   assertCsrfHeader(request);
-  const limit = checkRateLimit(RATE_LIMITS.graphql, clientIpFrom(request.headers));
+  const limit = checkRateLimit(RATE_LIMITS.graphql, rateLimitKeyFrom(request.headers));
   if (!limit.allowed) throw new GuardRejection(rateLimitedResponse(limit.retryAfterSeconds));
   const body = await readBodyWithLimit(request);
 

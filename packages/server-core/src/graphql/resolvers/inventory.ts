@@ -1,5 +1,5 @@
 import { pageRequest } from '../../db/pagination';
-import { requireStaff } from '../../features/auth/guards';
+import { parseIdArgument, requireStaff } from '../../features/auth/guards';
 import { adjustInventory } from '../../features/inventory/operations';
 import { listBalances, listMovements } from '../../features/inventory/queries';
 import type { Resolvers } from '../generated/resolvers';
@@ -11,13 +11,13 @@ export const inventoryResolvers: Resolvers = {
       requireStaff(ctx.viewer);
       return listBalances(
         ctx.services.db,
-        { warehouseId: args.warehouseId ?? null, lowStockOnly: args.lowStockOnly === true },
+        { warehouseId: parseIdArgument(args.warehouseId, 'warehouseId'), lowStockOnly: args.lowStockOnly === true },
         pageRequest(args.first, args.after),
       );
     },
     inventoryMovements: (_parent, args, ctx) => {
       requireStaff(ctx.viewer);
-      return listMovements(ctx.services.db, { skuId: args.skuId, warehouseId: args.warehouseId ?? null }, pageRequest(args.first, args.after));
+      return listMovements(ctx.services.db, { skuId: parseIdArgument(args.skuId, 'skuId'), warehouseId: parseIdArgument(args.warehouseId, 'warehouseId') }, pageRequest(args.first, args.after));
     },
   },
   Mutation: {

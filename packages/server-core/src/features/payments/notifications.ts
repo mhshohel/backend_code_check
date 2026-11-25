@@ -6,7 +6,15 @@ import type { Services } from '../../services';
 import type { RequestMeta } from '../auth/sessions';
 import { enqueueSearchUpdateForSkus } from '../catalog/search-events';
 import { recordOrderChanged } from '../orders/events';
-import { lockOrder, PAYMENT_COLUMNS, type OrderRecord, type PaymentRecord } from '../orders/records';
+import {
+  assertReservationTransitions,
+  lockOrder,
+  PAYMENT_COLUMNS,
+  updateOrderStatus,
+  type OrderRecord,
+  type PaymentRecord,
+  type ReservationRecord,
+} from '../orders/records';
 import { releaseOrderReservations } from '../orders/reservations';
 import { createRefund } from './refunds';
 
@@ -98,12 +106,17 @@ async function applyOutcome(
 ): Promise<void> {
   switch (outcome) {
     case 'captured': {
+      const held = await tx.query<Pick<ReservationRecord, 'status'>>(
+        `SELECT status FROM reservations WHERE order_id = $1 AND status <> 'RELEASED' FOR UPDATE`,
+        [order.id],
+      );
+      assertReservationTransitions(held.rows, 'CONFIRMED');
       await tx.query(
         `UPDATE reservations SET status = 'CONFIRMED', updated_at = now() WHERE order_id = $1 AND status = 'ACTIVE'`,
         [order.id],
       );
       await setPaymentStatus(tx, payment, 'CAPTURED', null);
-      await tx.query(`UPDATE orders SET status = 'CONFIRMED', updated_at = now() WHERE id = $1`, [order.id]);
+      await updateOrderStatus(tx, order, 'CONFIRMED');
       await recordOrderChanged(tx, order.id, { status: 'CONFIRMED' }, correlationId);
       return;
     }
@@ -116,10 +129,7 @@ async function applyOutcome(
     case 'declined': {
       const released = await releaseOrderReservations(tx, order.id, ['ACTIVE'], 'PAYMENT_DECLINED');
       await setPaymentStatus(tx, payment, 'DECLINED', notification.declineReason ?? 'card_declined');
-      await tx.query(
-        `UPDATE orders SET status = 'CANCELLED', cancellation_reason = 'PAYMENT_DECLINED', updated_at = now() WHERE id = $1`,
-        [order.id],
-      );
+      await updateOrderStatus(tx, order, 'CANCELLED', 'PAYMENT_DECLINED');
       await enqueueSearchUpdateForSkus(
         tx,
         released.map((r) => r.skuId),
