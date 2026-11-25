@@ -94,8 +94,45 @@ What to notice:
 
 ## 4. Next.js
 
-Added after the Next.js variant is complete. See
+Entry points: [`app/`](../implementations/nextjs/app) (pages, layouts, route
+handlers) and [`modules/server/`](../implementations/nextjs/modules/server)
+(server-only code). Full walkthrough:
 [`implementations/nextjs/README.md`](../implementations/nextjs/README.md).
+
+There is no request pipeline to order. Each concern lives at a boundary that
+the framework defines:
+
+| Concern | Where | File |
+| --- | --- | --- |
+| Public pages (catalog, product) | Server Components call the application layer in-process | [`modules/server/data/run-operation.ts`](../implementations/nextjs/modules/server/data/run-operation.ts) |
+| Mutations from the browser | Client components send GraphQL to a route handler | [`app/api/graphql/route.ts`](../implementations/nextjs/app/api/graphql/route.ts) |
+| Login, logout, price change | Server Actions (`cookies()` API) | [`modules/auth/actions.ts`](../implementations/nextjs/modules/auth/actions.ts), [`modules/admin/actions.ts`](../implementations/nextjs/modules/admin/actions.ts) |
+| CSRF, rate limit, body limit | A wrapper around each route handler (`withGuards`) | [`modules/server/http/guards.ts`](../implementations/nextjs/modules/server/http/guards.ts) |
+| Access checks for pages | Segment layouts (`redirect`, `forbidden`, `notFound`) | `app/orders`, `app/warehouse`, `app/admin` layouts |
+| Subscriptions | A separate Node process with graphql-ws | [`modules/realtime/server.ts`](../implementations/nextjs/modules/realtime/server.ts) |
+
+What to notice:
+
+- **No HTTP call to itself.** A Server Component runs `executeOperation`
+  against the shared schema in the same process. The result is copied with
+  `structuredClone`, because graphql-js returns null-prototype objects that
+  React refuses to pass to client components.
+- **Caching is a decision per data source.** Anonymous search results use
+  `unstable_cache` for 15 s with the index prefix in the key; categories for
+  300 s. Anything that reads the session is dynamic and sent with
+  `Cache-Control: private, no-store`. The admin price action calls
+  `revalidateTag`; client mutations call `router.refresh()`.
+- **Loading boundaries change status codes.** A root `loading.tsx` starts a
+  streamed response with status 200 before the page can redirect or return 403.
+  Loading files therefore live in route groups below the access checks.
+- **Bundling has consequences.** Route handlers and Server Components are
+  separate bundles with separate copies of workspace modules. `instanceof`
+  failed across them, so `AppError` carries a global symbol brand.
+- **No client IP without a proxy.** Route handlers see headers only, and
+  `X-Forwarded-For` is client-controlled unless a trusted proxy sets it.
+  `TRUST_PROXY` decides which key the rate limiter uses.
+- **No WebSocket upgrade in route handlers.** The realtime service runs on its
+  own port; cookies are host-scoped, so the browser still sends the session.
 
 ## 5. When to choose which
 

@@ -44,4 +44,5 @@ Procedure:
 - Load scenarios, targets vs observed, caveats: [README "Benchmark report"](../README.md#benchmark-report) and [`reports/benchmarks.md`](../reports/benchmarks.md).
 - Migration 0002 (keyset index): [`reports/explain-my-orders.md`](../reports/explain-my-orders.md). First measurement with a 5,000-order customer: p50 1.751 → 0.007 ms. The final report ran after extra load runs, when the customer had 26,720 orders: p50 5.374 → 0.009 ms.
 - Migration 0003 (`shipment_lines` index): [`reports/checkout-profile.md`](../reports/checkout-profile.md). Checkout at 50 connections: 108.8 → 1345.8 req/s, p50 414.7 → 36.6 ms.
-- Targets missed: Fastify "my orders" p95 in run 1 (outlier, see README) and worker backlog lag p95 (target unrealistic for a 5,000-job burst).
+- Targets missed: "my orders" p95 for one variant per run (Fastify in run 1, Express in run 3). The tail follows host load spikes from unrelated processes, not the framework; each report records the load average. Worker backlog lag p95 also missed: the target was unrealistic for a 5,000-job burst.
+- Reports: [`benchmarks.md`](../reports/benchmarks.md) (run 1, main result), [`benchmarks-run3-under-load.md`](../reports/benchmarks-run3-under-load.md), [`benchmarks-rerun-fastify-under-load.md`](../reports/benchmarks-rerun-fastify-under-load.md).

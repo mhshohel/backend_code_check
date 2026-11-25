@@ -238,12 +238,15 @@ Correctness under load, both variants: hot SKU sold out to exactly 0 with no
 oversell, `OperatorOrders` used 10 database queries for 5, 20, and 50 orders,
 and the ledger reconciled with 0 differences.
 
-Caveats: the Fastify "my orders" row is an outlier. An earlier quiet run gave
-1731.7 req/s, p95 15.5 ms; a Fastify-only rerun ran while unrelated host
-processes held the load average near 56 on 16 cores and is kept only as
-evidence ([`reports/benchmarks-rerun-fastify-under-load.md`](reports/benchmarks-rerun-fastify-under-load.md)).
-Laptop noise is larger than the Express/Fastify difference, so these numbers do
-not rank the frameworks. The worker lag target was badly chosen for a burst of
+Caveats: the Fastify "my orders" p95 in run 1 is host noise, not a framework
+property. In run 3 ([`reports/benchmarks-run3-under-load.md`](reports/benchmarks-run3-under-load.md),
+load average 21 → 39 from unrelated processes) the same tail appeared on
+Express (p95 97.4 ms) while Fastify was clean (p95 17.8 ms). An earlier quiet run
+gave Fastify 1731.7 req/s, p95 15.5 ms. A Fastify-only rerun at load average 56
+is kept as evidence ([`reports/benchmarks-rerun-fastify-under-load.md`](reports/benchmarks-rerun-fastify-under-load.md)).
+Run-to-run noise on this laptop is larger than the Express/Fastify difference,
+so these numbers do not rank the frameworks. Correctness was the same in every
+run: 0 errors, no oversell, constant query count, 0 ledger differences. The worker lag target was badly chosen for a burst of
 5,000 jobs: draining at 209 jobs/s takes about 24 s by definition.
 
 Rerun: load the bench data with
