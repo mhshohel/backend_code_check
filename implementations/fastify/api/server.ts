@@ -25,4 +25,4 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 process.once('SIGTERM', (signal) => void shutdown(signal));
 process.once('SIGINT', (signal) => void shutdown(signal));
 
-await server.listen({ port: Number(process.env.PORT ?? 4200), host: process.env.HOST ?? '127.0.0.1' });
+await server.listen({ port: Number(process.env.PORT ?? 9005), host: process.env.HOST ?? '127.0.0.1' });

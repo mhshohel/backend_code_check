@@ -5,7 +5,7 @@ import { buildServer } from '../../api/build-server';
 import type { BuildServerOptions } from '../../api/options';
 
 export const TEST_WEBHOOK_SECRET = 'fastify-test-webhook-secret';
-export const TEST_WEB_ORIGIN = 'http://localhost:4201';
+export const TEST_WEB_ORIGIN = 'http://localhost:9006';
 
 /** Requirements §11: Fastify tests use ofl_fastify_test and the ofl_fastify_test_ index prefix. */
 export function testConfig(overrides: Record<string, string> = {}): AppConfig {

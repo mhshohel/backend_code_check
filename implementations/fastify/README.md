@@ -7,9 +7,9 @@ The browser app is the shared [`@ofl/web-spa`](../../packages/web-spa).
 
 | Process | Port | Entry |
 | --- | --- | --- |
-| API (HTTP + GraphQL + WebSocket + SPA in production) | 4200 | [`api/server.ts`](api/server.ts) |
-| Web dev server (Vite, proxies to the API) | 4201 | [`web/vite.config.ts`](web/vite.config.ts) |
-| Worker (outbox jobs) + health/metrics | 4202 | [`worker/main.ts`](worker/main.ts) |
+| API (HTTP + GraphQL + WebSocket + SPA in production) | 9005 | [`api/server.ts`](api/server.ts) |
+| Web dev server (Vite, proxies to the API) | 9006 | [`web/vite.config.ts`](web/vite.config.ts) |
+| Worker (outbox jobs) + health/metrics | 9007 | [`worker/main.ts`](worker/main.ts) |
 
 Resources: database `ofl_fastify` (tests: `ofl_fastify_test`), Elasticsearch
 prefix `ofl_fastify_` (tests: `ofl_fastify_test_`).
@@ -24,14 +24,14 @@ pnpm db:create
 cd implementations/fastify
 cp .env.example .env
 pnpm reset          # migrate, empty the database, load the demo profile
-pnpm dev            # API :4200, worker :4202, Vite :4201 -> open http://localhost:4201
+pnpm dev            # API :9005, worker :9007, Vite :9006 -> open http://localhost:9006
 ```
 
 Production-style run:
 
 ```sh
 pnpm build          # vite build (web/dist) + esbuild bundles (dist/api, dist/worker)
-pnpm start          # API serves web/dist at http://localhost:4200, plus the worker
+pnpm start          # API serves web/dist at http://localhost:9005, plus the worker
 ```
 
 Other scripts: `pnpm seed` (demo data), `pnpm typecheck`, `pnpm lint`,
@@ -139,7 +139,7 @@ waits for in-flight requests, then runs `onClose` hooks (graphql-ws dispose,
 ### Worker
 
 [`worker/main.ts`](worker/main.ts) runs `startWorker` and a minimal Fastify
-instance on :4202 with `/health/live`, `/health/ready`, `/metrics`. On
+instance on :9007 with `/health/live`, `/health/ready`, `/metrics`. On
 SIGTERM it stops the health server, lets in-flight jobs finish
 (`worker.stop()`), then closes the services.
 

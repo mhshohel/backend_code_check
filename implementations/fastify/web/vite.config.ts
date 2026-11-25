@@ -1,15 +1,15 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-// Dev: Vite serves the SPA on 4201 and proxies API paths to Fastify on 4200,
+// Dev: Vite serves the SPA on 9006 and proxies API paths to Fastify on 9005,
 // so the browser sees one origin (SameSite cookie, CSRF header, WebSocket).
-const API_TARGET = process.env.API_ORIGIN ?? 'http://127.0.0.1:4200';
+const API_TARGET = process.env.API_ORIGIN ?? 'http://127.0.0.1:9005';
 
 export default defineConfig({
   root: import.meta.dirname,
   plugins: [react()],
   server: {
-    port: 4201,
+    port: 9006,
     strictPort: true,
     proxy: {
       '/graphql': { target: API_TARGET, ws: true, changeOrigin: false },

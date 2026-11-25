@@ -13,7 +13,7 @@ import { listenHost, loadDotEnv } from '../modules/process/env';
 import { onShutdownSignal } from '../modules/process/shutdown';
 
 // Outbox worker for the Next.js variant: payment authorization, reservation
-// expiry, refunds, search indexing. Health and metrics on WORKER_HEALTH_PORT (4302).
+// expiry, refunds, search indexing. Health and metrics on WORKER_HEALTH_PORT (9010).
 
 function startHealthServer(services: Services, port: number, host: string) {
   const server = createServer((request, response) => {
@@ -47,7 +47,7 @@ async function main(): Promise<void> {
   const services = await createServices(loadConfig(process.env), { role: 'worker' });
   const workerId = `nextjs-worker-${hostname()}-${process.pid}`;
   const worker = startWorker(services, { workerId });
-  const healthPort = Number(process.env.WORKER_HEALTH_PORT ?? 4302);
+  const healthPort = Number(process.env.WORKER_HEALTH_PORT ?? 9010);
   const host = listenHost();
   const health = startHealthServer(services, healthPort, host);
   services.logger.info({ workerId, healthPort, host }, 'worker started');

@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const isDev = process.env.NODE_ENV !== 'production';
-const realtimePort = process.env.REALTIME_PORT ?? '4301';
+const realtimePort = process.env.REALTIME_PORT ?? '9009';
 const realtimeSources = process.env.REALTIME_PUBLIC_URL
   ? process.env.REALTIME_PUBLIC_URL
   : `ws://localhost:${realtimePort} ws://127.0.0.1:${realtimePort}`;
@@ -16,7 +16,7 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self'",
-  `connect-src 'self' ${realtimeSources}${isDev ? ' ws://localhost:4300' : ''}`,
+  `connect-src 'self' ${realtimeSources}${isDev ? ' ws://localhost:9008' : ''}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

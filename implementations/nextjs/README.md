@@ -9,9 +9,9 @@ framework layer.
 
 | Process | Port | Entry |
 | --- | --- | --- |
-| Next.js app (pages, route handlers, Server Actions) | 4300 | [`app/`](app) |
-| Realtime service (graphql-ws subscriptions) | 4301 | [`modules/realtime/main.ts`](modules/realtime/main.ts) |
-| Worker (outbox jobs) + health/metrics | 4302 | [`worker/main.ts`](worker/main.ts) |
+| Next.js app (pages, route handlers, Server Actions) | 9008 | [`app/`](app) |
+| Realtime service (graphql-ws subscriptions) | 9009 | [`modules/realtime/main.ts`](modules/realtime/main.ts) |
+| Worker (outbox jobs) + health/metrics | 9010 | [`worker/main.ts`](worker/main.ts) |
 
 Database `ofl_nextjs` (tests: `ofl_nextjs_test`), Elasticsearch prefix
 `ofl_nextjs_` (tests: `ofl_nextjs_test_`).
@@ -26,7 +26,7 @@ Prerequisites: PostgreSQL on localhost (databases created with
 cd implementations/nextjs
 cp .env.example .env
 pnpm reset          # ofl reset (migrate + empty) && ofl-seed --profile demo
-pnpm dev            # next dev :4300 + realtime :4301 + worker :4302 (tsx watch)
+pnpm dev            # next dev :9008 + realtime :9009 + worker :9010 (tsx watch)
 # or the production build:
 pnpm build          # next build + esbuild bundles dist/realtime.mjs, dist/worker.mjs
 pnpm start          # next start + node dist/realtime.mjs + node dist/worker.mjs
@@ -34,7 +34,7 @@ pnpm start          # next start + node dist/realtime.mjs + node dist/worker.mjs
 
 [`scripts/run-services.mjs`](scripts/run-services.mjs) starts the three
 processes, forwards Ctrl+C / SIGTERM to all of them, and stops all of them
-when one exits. Open <http://localhost:4300> and sign in with a demo account
+when one exits. Open <http://localhost:9008> and sign in with a demo account
 (`customer@example.com` / `customer-pass-1`, `operator@example.com` /
 `operator-pass-1`, `admin@example.com` / `admin-pass-1`).
 
@@ -281,7 +281,7 @@ therefore run in a small Node process,
   server-core, and the same schema as the app.
 - The session comes from the `ofl_session` cookie on the upgrade request.
   Cookies are scoped by host, not by port, so a page on
-  `localhost:4300` sends its cookie to `localhost:4301`. The page derives the
+  `localhost:9008` sends its cookie to `localhost:9009`. The page derives the
   WebSocket URL from the host it was loaded from
   ([`realtime-url.ts`](modules/server/realtime-url.ts)), so `localhost`
   versus `127.0.0.1` always matches.
@@ -308,7 +308,7 @@ therefore run in a small Node process,
 [`worker/main.ts`](worker/main.ts):
 
 - `startWorker`, plus `/health/live`, `/health/ready` and `/metrics` on port
-  4302.
+  9010.
 - The health server and the realtime service bind to `HOST`, which defaults
   to `127.0.0.1`. Set `HOST=0.0.0.0` only behind a proxy or inside a
   container network.
@@ -409,5 +409,5 @@ Last full run (`pnpm test`): 11 suites, 108 tests, all passing.
   has no rate limit.
 - **Search staleness.** Search shows the Elasticsearch snapshot (plus up to
   15 s of data cache). The product page and checkout always use PostgreSQL.
-- **Metrics are unauthenticated.** Expose `/api/metrics` and port 4302 only
+- **Metrics are unauthenticated.** Expose `/api/metrics` and port 9010 only
   on an internal network.

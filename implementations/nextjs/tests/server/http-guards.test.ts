@@ -12,7 +12,7 @@ import { expiredCookie, serializeCookie } from '@/modules/server/http/cookies';
 import { isAllowedOrigin } from '@/modules/realtime/origin';
 import { safeReturnPath } from '@/modules/auth/return-path';
 
-const url = 'http://localhost:4300/api/graphql';
+const url = 'http://localhost:9008/api/graphql';
 
 async function rejectionStatus(run: () => unknown): Promise<number | undefined> {
   try {
@@ -36,7 +36,7 @@ describe('CSRF and origin guards', () => {
   it('accepts same-origin and missing Origin, rejects foreign origins', async () => {
     const withOrigin = (origin?: string) => new Request(url, { method: 'POST', headers: origin ? { origin } : {} });
     expect(await rejectionStatus(() => assertSameOrigin(withOrigin()))).toBeUndefined();
-    expect(await rejectionStatus(() => assertSameOrigin(withOrigin('http://localhost:4300')))).toBeUndefined();
+    expect(await rejectionStatus(() => assertSameOrigin(withOrigin('http://localhost:9008')))).toBeUndefined();
     expect(await rejectionStatus(() => assertSameOrigin(withOrigin('https://evil.example')))).toBe(403);
     process.env.APP_ORIGIN = 'https://shop.example';
     expect(await rejectionStatus(() => assertSameOrigin(withOrigin('https://shop.example')))).toBeUndefined();
@@ -117,9 +117,9 @@ describe('request helpers', () => {
   });
 
   it('allows WebSocket upgrades without Origin but checks present origins', () => {
-    expect(isAllowedOrigin(undefined, ['http://localhost:4300'])).toBe(true);
-    expect(isAllowedOrigin('http://localhost:4300', ['http://localhost:4300'])).toBe(true);
-    expect(isAllowedOrigin('https://evil.example', ['http://localhost:4300'])).toBe(false);
+    expect(isAllowedOrigin(undefined, ['http://localhost:9008'])).toBe(true);
+    expect(isAllowedOrigin('http://localhost:9008', ['http://localhost:9008'])).toBe(true);
+    expect(isAllowedOrigin('https://evil.example', ['http://localhost:9008'])).toBe(false);
   });
 
   it('only allows local return paths after login', () => {

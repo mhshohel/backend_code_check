@@ -7,7 +7,7 @@ import { attachGraphQLWebSocket } from './websocket';
 
 export type RunningServer = {
   server: Server;
-  /** For example http://127.0.0.1:4100 */
+  /** For example http://127.0.0.1:9001 */
   baseUrl: string;
   /** Stops accepting, closes WebSockets, drains in-flight HTTP requests. Does not close services. */
   stop(): Promise<void>;

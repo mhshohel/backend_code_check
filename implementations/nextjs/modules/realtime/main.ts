@@ -7,8 +7,8 @@ import { startRealtimeServer } from './server';
 async function main(): Promise<void> {
   loadDotEnv();
   const services = await createServices(loadConfig(process.env), { role: 'api' });
-  const port = Number(process.env.REALTIME_PORT ?? 4301);
-  const appPort = Number(process.env.PORT ?? 4300);
+  const port = Number(process.env.REALTIME_PORT ?? 9009);
+  const appPort = Number(process.env.PORT ?? 9008);
   const server = await startRealtimeServer({
     services,
     port,

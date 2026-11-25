@@ -108,6 +108,30 @@ Run from the repository root:
 3. `pnpm db:create` — creates the databases (dev and test for each variant, plus `ofl_core_test` and `ofl_bench`).
 4. `pnpm codegen` — generates GraphQL types (already committed; needed after schema changes).
 
+## Makefile (one-click commands)
+
+Every target wraps a pnpm script. Run `make` to list them. In VS Code
+(Makefile Tools extension) or JetBrains IDEs, each target gets a run button.
+
+| Target | Effect |
+| --- | --- |
+| `make setup` | First run: install, start Elasticsearch, create databases |
+| `make seed-all` | Reset and load demo data into all three databases |
+| `make express-dev` / `fastify-dev` / `nextjs-dev` | Start one variant in dev mode |
+| `make dev-all` | Start all three at once (Ctrl+C stops all) |
+| `make express-open` / `fastify-open` / `nextjs-open` | Open that UI in the browser |
+| `make status` | Show which of the 9 lab servers are up |
+| `make stop` | Stop everything listening on the lab ports |
+| `make express-test` / `fastify-test` / `nextjs-test` | Run one variant's tests |
+| `make test-all` / `make check-all` | All tests / type check and lint everything |
+| `make express-start` (etc.) / `make start-all` | Production build and run |
+
+Typical first session: `make setup`, `make seed-all`, `make dev-all`, then
+open http://localhost:9002 (Express), http://localhost:9006 (Fastify), and
+http://localhost:9008 (Next.js).
+
+Port 9003 is skipped because PhpStorm/Xdebug uses it by default.
+
 ## Run a variant
 
 Each variant has its own database, index prefix, and ports, so all three can
@@ -115,9 +139,9 @@ run at the same time.
 
 | Variant | Database | App / API | Web (dev) | Realtime | Worker health |
 | --- | --- | --- | --- | --- | --- |
-| Express | `ofl_express` | http://localhost:4100 | http://localhost:4101 | 4100 | 4102 |
-| Fastify | `ofl_fastify` | http://localhost:4200 | http://localhost:4201 | 4200 | 4202 |
-| Next.js | `ofl_nextjs` | http://localhost:4300 | http://localhost:4300 | 4301 | 4302 |
+| Express | `ofl_express` | http://localhost:9001 | http://localhost:9002 | 9001 | 9004 |
+| Fastify | `ofl_fastify` | http://localhost:9005 | http://localhost:9006 | 9005 | 9007 |
+| Next.js | `ofl_nextjs` | http://localhost:9008 | http://localhost:9008 | 9009 | 9010 |
 
 Commands (replace `express` with `fastify` or `nextjs`):
 

@@ -15,7 +15,7 @@ export type AppOptions = {
 
 export function defaultAppOptions(overrides: Partial<AppOptions> = {}): AppOptions {
   return {
-    allowedOrigins: ['http://localhost:4101', 'http://localhost:4100'],
+    allowedOrigins: ['http://localhost:9002', 'http://localhost:9001'],
     rateLimits: DEFAULT_RATE_LIMITS,
     staticDir: null,
     bodyLimit: '100kb',

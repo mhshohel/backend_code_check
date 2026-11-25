@@ -1,6 +1,6 @@
 /* global process, console, setTimeout, setInterval, clearInterval */
 // Starts the three processes of the Next.js variant and stops them together:
-//   app (next, port 4300) · realtime graphql-ws service (4301) · worker (health 4302)
+//   app (next, port 9008) · realtime graphql-ws service (9009) · worker (health 9010)
 // Usage: node scripts/run-services.mjs dev|start
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -18,7 +18,7 @@ const bin = (name) => {
   const local = resolve(root, 'node_modules/.bin', name);
   return existsSync(local) ? local : resolve(root, '../../node_modules/.bin', name);
 };
-const appPort = process.env.PORT ?? '4300';
+const appPort = process.env.PORT ?? '9008';
 const env = { ...process.env, NEXT_TELEMETRY_DISABLED: '1' };
 
 const commands =

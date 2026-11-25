@@ -292,9 +292,9 @@ Operators retry FAILED jobs from the admin dashboard (`retryJob`) or the CLI.
 
 | Variant | API / app | Web (dev) | Realtime | Worker health | Database | Test database | ES prefix |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Express | 4100 | 4101 | 4100 | 4102 | `ofl_express` | `ofl_express_test` | `ofl_express_` |
-| Fastify | 4200 | 4201 | 4200 | 4202 | `ofl_fastify` | `ofl_fastify_test` | `ofl_fastify_` |
-| Next.js | 4300 | 4300 | 4301 | 4302 | `ofl_nextjs` | `ofl_nextjs_test` | `ofl_nextjs_` |
+| Express | 9001 | 9002 | 9001 | 9004 | `ofl_express` | `ofl_express_test` | `ofl_express_` |
+| Fastify | 9005 | 9006 | 9005 | 9007 | `ofl_fastify` | `ofl_fastify_test` | `ofl_fastify_` |
+| Next.js | 9008 | 9008 | 9009 | 9010 | `ofl_nextjs` | `ofl_nextjs_test` | `ofl_nextjs_` |
 | Shared package tests | – | – | – | – | `ofl_core_test` | – | `ofl_coretest_` |
 
 Test index prefixes add `test_` (for example `ofl_express_test_`).

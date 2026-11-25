@@ -14,7 +14,7 @@ import { cookieValue } from '../server/http/request-meta';
 import { isAllowedOrigin } from './origin';
 
 // Next.js route handlers cannot accept WebSocket upgrades, so subscriptions
-// run in this small Node process next to `next start` (port 4301). It uses
+// run in this small Node process next to `next start` (port 9009). It uses
 // the same schema and the same session table as the app; the browser sends
 // the ofl_session cookie because cookies are scoped by host, not by port.
 

@@ -2,9 +2,9 @@
 // databases, Elasticsearch index prefixes, and ports, so all three can run
 // at the same time without collisions.
 export const VARIANTS = {
-  express: { apiPort: 4100, webPort: 4101, workerPort: 4102, realtimePort: 4100, database: 'ofl_express', esPrefix: 'ofl_express_' },
-  fastify: { apiPort: 4200, webPort: 4201, workerPort: 4202, realtimePort: 4200, database: 'ofl_fastify', esPrefix: 'ofl_fastify_' },
-  nextjs: { apiPort: 4300, webPort: 4300, workerPort: 4302, realtimePort: 4301, database: 'ofl_nextjs', esPrefix: 'ofl_nextjs_' },
+  express: { apiPort: 9001, webPort: 9002, workerPort: 9004, realtimePort: 9001, database: 'ofl_express', esPrefix: 'ofl_express_' },
+  fastify: { apiPort: 9005, webPort: 9006, workerPort: 9007, realtimePort: 9005, database: 'ofl_fastify', esPrefix: 'ofl_fastify_' },
+  nextjs: { apiPort: 9008, webPort: 9008, workerPort: 9010, realtimePort: 9009, database: 'ofl_nextjs', esPrefix: 'ofl_nextjs_' },
 } as const;
 
 /** Every database the lab uses: dev and test per variant, plus shared-package tests and benchmarks. */

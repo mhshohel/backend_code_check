@@ -3,7 +3,7 @@ import { startHttpServer, type RunningServer, type StartOptions } from '../api/h
 import { DEFAULT_RATE_LIMITS } from '../api/options';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgresql://shohelshamim@localhost:5432/ofl_express_test';
-export const WEB_ORIGIN = 'http://localhost:4101';
+export const WEB_ORIGIN = 'http://localhost:9002';
 
 /** Rate limits high enough for a full suite run from 127.0.0.1. Production defaults are unchanged. */
 export const TEST_RATE_LIMITS = { loginPerMinute: 1000, graphqlPerMinute: 100_000, webhookPerMinute: 10_000 };

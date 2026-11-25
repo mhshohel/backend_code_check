@@ -12,6 +12,6 @@ export async function realtimeUrlForRequest(): Promise<string> {
   const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host') ?? 'localhost';
   const hostname = new URL(`http://${host}`).hostname;
   const secure = requestHeaders.get('x-forwarded-proto') === 'https';
-  const port = process.env.REALTIME_PORT ?? '4301';
+  const port = process.env.REALTIME_PORT ?? '9009';
   return `${secure ? 'wss' : 'ws'}://${hostname.includes(':') ? `[${hostname}]` : hostname}:${port}/graphql`;
 }

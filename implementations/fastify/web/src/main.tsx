@@ -7,7 +7,7 @@ const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 mountApp(root, {
   variantName: 'Fastify',
   graphqlPath: '/graphql',
-  // Same origin in dev (Vite proxies upgrades to :4200) and in production (Fastify serves the SPA).
+  // Same origin in dev (Vite proxies upgrades to :9005) and in production (Fastify serves the SPA).
   wsUrl: `${wsProtocol}://${window.location.host}/graphql`,
   authBasePath: '/auth',
 });

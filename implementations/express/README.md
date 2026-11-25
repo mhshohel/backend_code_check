@@ -6,9 +6,9 @@ process, and the shared React SPA (`@ofl/web-spa`). Business rules live in
 
 | Process | Port | Entry |
 | --- | --- | --- |
-| API (HTTP + WebSocket `/graphql`) | 4100 | `api/server.ts` |
-| Vite dev server (SPA, proxies the API) | 4101 | `web/vite.config.ts` |
-| Worker health/metrics | 4102 | `worker/main.ts` |
+| API (HTTP + WebSocket `/graphql`) | 9001 | `api/server.ts` |
+| Vite dev server (SPA, proxies the API) | 9002 | `web/vite.config.ts` |
+| Worker health/metrics | 9004 | `worker/main.ts` |
 
 Database `ofl_express` (tests: `ofl_express_test`), Elasticsearch prefix
 `ofl_express_` (tests: `ofl_express_test_`).
@@ -18,7 +18,7 @@ Database `ofl_express` (tests: `ofl_express_test`), Elasticsearch prefix
 ```bash
 cp .env.example .env        # once; DATABASE_URL points at ofl_express
 pnpm reset                  # migrate + reset schema, then seed the demo profile
-pnpm dev                    # API (tsx watch) + worker + Vite → http://localhost:4101
+pnpm dev                    # API (tsx watch) + worker + Vite → http://localhost:9002
 ```
 
 Demo accounts: `customer@example.com` / `customer-pass-1`,
@@ -26,7 +26,7 @@ Demo accounts: `customer@example.com` / `customer-pass-1`,
 
 | Script | What it does |
 | --- | --- |
-| `pnpm dev` | `scripts/run-all.mjs dev`: API and worker with `tsx watch`, Vite on 4101. Ctrl+C stops all three. |
+| `pnpm dev` | `scripts/run-all.mjs dev`: API and worker with `tsx watch`, Vite on 9002. Ctrl+C stops all three. |
 | `pnpm build` | `vite build` → `web/dist`; esbuild bundles `api/server.ts` and `worker/main.ts` → `dist/` (`@ofl/*` sources bundled, `node_modules` external). |
 | `pnpm start` | Built API (serves `web/dist` too) and worker with `NODE_ENV=production`. Set a real `PAYMENT_WEBHOOK_SECRET`; production refuses the default. |
 | `pnpm seed` / `pnpm reset` | `ofl-seed --profile demo`; `ofl reset && ofl-seed --profile demo`, using this folder's `.env`. |
@@ -43,8 +43,8 @@ Middleware order is deliberate:
    log line (with the correlation ID) per response; the route label comes from
    a fixed list (bounded cardinality). Health probes log at debug level.
 3. **Helmet** (CSP enforced for the built SPA in production) and **CORS
-   allowlist** (`WEB_ORIGINS`, default `http://localhost:4101` and
-   `http://localhost:4100`, credentials allowed).
+   allowlist** (`WEB_ORIGINS`, default `http://localhost:9002` and
+   `http://localhost:9001`, credentials allowed).
 4. **Health and metrics**: `GET /health/live`, `/health/ready` (503 when
    PostgreSQL is down; Elasticsearch is reported but search is optional, the
    catalog degrades to `SEARCH_UNAVAILABLE`), `/metrics` (Prometheus). Not rate

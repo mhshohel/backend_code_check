@@ -29,10 +29,10 @@ export type ExpressSettings = {
 export function loadExpressSettings(env: NodeJS.ProcessEnv, production: boolean): ExpressSettings {
   const webDist = fileURLToPath(new URL('../web/dist', import.meta.url));
   return {
-    port: intFrom(env.PORT, 4100, 'PORT'),
+    port: intFrom(env.PORT, 9001, 'PORT'),
     host: env.HOST || '127.0.0.1',
-    workerHealthPort: intFrom(env.WORKER_HEALTH_PORT, 4102, 'WORKER_HEALTH_PORT'),
-    allowedOrigins: (env.WEB_ORIGINS || 'http://localhost:4101,http://localhost:4100')
+    workerHealthPort: intFrom(env.WORKER_HEALTH_PORT, 9004, 'WORKER_HEALTH_PORT'),
+    allowedOrigins: (env.WEB_ORIGINS || 'http://localhost:9002,http://localhost:9001')
       .split(',')
       .map((origin) => origin.trim())
       .filter(Boolean),

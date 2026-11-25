@@ -30,5 +30,5 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 process.once('SIGTERM', (signal) => void shutdown(signal));
 process.once('SIGINT', (signal) => void shutdown(signal));
 
-await health.listen({ port: Number(process.env.WORKER_PORT ?? 4202), host: process.env.HOST ?? '127.0.0.1' });
+await health.listen({ port: Number(process.env.WORKER_PORT ?? 9007), host: process.env.HOST ?? '127.0.0.1' });
 services.logger.info('worker started');
