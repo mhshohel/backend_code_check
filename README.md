@@ -1,14 +1,15 @@
 # Order Fulfillment Lab
 
-One order fulfillment and inventory platform, built three times:
+One order fulfillment and inventory platform, built four times:
 
 | Variant | Server | UI | Folder |
 | --- | --- | --- | --- |
 | Express | Express 5 + GraphQL Yoga | React SPA (React Router, Redux Toolkit, urql) | [`implementations/express`](implementations/express) |
 | Fastify | Fastify 5 + GraphQL Yoga | Same React SPA | [`implementations/fastify`](implementations/fastify) |
 | Next.js | Next.js 16 App Router (route handlers, Server Actions) | Server Components + client components | [`implementations/nextjs`](implementations/nextjs) |
+| NestJS | NestJS 12 on Express 5 (modules, middleware, guards, exception filter) + GraphQL Yoga | Same React SPA | [`implementations/nestjs`](implementations/nestjs) |
 
-All three use the same PostgreSQL schema, the same GraphQL contract, the same
+All four use the same PostgreSQL schema, the same GraphQL contract, the same
 business code, and pass the same 14 acceptance scenarios. The differences are
 framework mechanics only: routing, middleware or hooks, lifecycle, error
 handling, WebSocket hosting, and rendering.
@@ -32,7 +33,7 @@ currency (USD), and simulated payments.
 
 ```mermaid
 flowchart LR
-  UI[Browser UI] -- GraphQL over HTTP --> API[Express / Fastify / Next.js]
+  UI[Browser UI] -- GraphQL over HTTP --> API[Express / Fastify / Next.js / NestJS]
   UI -- graphql-ws --> WS[Subscriptions]
   API --> CORE[@ofl/server-core]
   WS --> CORE
@@ -73,12 +74,13 @@ packages/
   server-core/        Application layer shared by all variants (see below)
   test-fixtures/      Seed data: demo, contract, bench profiles (`ofl-seed`)
   test-contracts/     The acceptance suite every variant runs
-  web-spa/            React SPA used by the Express and Fastify variants
+  web-spa/            React SPA used by the Express, Fastify and NestJS variants
 implementations/
-  express/  fastify/  nextjs/   Server, worker, UI entry, tests, README per variant
+  express/  fastify/  nextjs/  nestjs/   Server, worker, UI entry, tests, README per variant
 infrastructure/postgres/migrations/   SQL migrations
 scripts/bench/        Load generator and benchmark scenarios
 docs/                 Requirements, architecture, decisions (ADRs), design notes
+architecture/         draw.io diagrams, interactive walkthroughs, PRD (`make architecture`)
 reports/              Benchmark and review reports
 ```
 
@@ -116,25 +118,27 @@ Every target wraps a pnpm script. Run `make` to list them. In VS Code
 | Target | Effect |
 | --- | --- |
 | `make setup` | First run: install, start Elasticsearch, create databases |
-| `make seed-all` | Reset and load demo data into all three databases |
-| `make express-dev` / `fastify-dev` / `nextjs-dev` | Start one variant in dev mode |
-| `make dev-all` | Start all three at once (Ctrl+C stops all) |
-| `make express-open` / `fastify-open` / `nextjs-open` | Open that UI in the browser |
-| `make status` | Show which of the 9 lab servers are up |
+| `make seed-all` | Reset and load demo data into all four databases |
+| `make express-dev` / `fastify-dev` / `nextjs-dev` / `nestjs-dev` | Start one variant in dev mode |
+| `make dev-all` | Start all four at once (Ctrl+C stops all) |
+| `make express-open` / `fastify-open` / `nextjs-open` / `nestjs-open` | Open that UI in the browser |
+| `make status` | Show which of the 12 lab servers are up |
 | `make stop` | Stop everything listening on the lab ports |
-| `make express-test` / `fastify-test` / `nextjs-test` | Run one variant's tests |
+| `make express-test` / `fastify-test` / `nextjs-test` / `nestjs-test` | Run one variant's tests |
+| `make test-scenario VARIANT=nestjs S=S9` | Run one acceptance scenario against one variant |
+| `make architecture` | Open the interactive architecture walkthroughs |
 | `make test-all` / `make check-all` | All tests / type check and lint everything |
 | `make express-start` (etc.) / `make start-all` | Production build and run |
 
 Typical first session: `make setup`, `make seed-all`, `make dev-all`, then
-open http://localhost:9002 (Express), http://localhost:9006 (Fastify), and
-http://localhost:9008 (Next.js).
+open http://localhost:9002 (Express), http://localhost:9006 (Fastify),
+http://localhost:9008 (Next.js), and http://localhost:9012 (NestJS).
 
 Port 9003 is skipped because PhpStorm/Xdebug uses it by default.
 
 ## Run a variant
 
-Each variant has its own database, index prefix, and ports, so all three can
+Each variant has its own database, index prefix, and ports, so all four can
 run at the same time.
 
 | Variant | Database | App / API | Web (dev) | Realtime | Worker health |
@@ -142,6 +146,7 @@ run at the same time.
 | Express | `ofl_express` | http://localhost:9001 | http://localhost:9002 | 9001 | 9004 |
 | Fastify | `ofl_fastify` | http://localhost:9005 | http://localhost:9006 | 9005 | 9007 |
 | Next.js | `ofl_nextjs` | http://localhost:9008 | http://localhost:9008 | 9009 | 9010 |
+| NestJS | `ofl_nestjs` | http://localhost:9011 | http://localhost:9012 | 9011 | 9013 |
 
 Commands (replace `express` with `fastify` or `nextjs`):
 
@@ -181,7 +186,7 @@ Operations CLI (run inside a variant folder; it reads that variant's `.env`):
 
 ## Tests
 
-| Suite | Command | Result (final run, 2026-11-25) |
+| Suite | Command | Result (final run, 2026-11-26) |
 | --- | --- | --- |
 | Domain rules (unit) | `pnpm --filter @ofl/domain test` | 53 / 53 |
 | Application layer (integration, real PostgreSQL + Elasticsearch) | `pnpm --filter @ofl/server-core test` | 112 / 112 |
@@ -191,8 +196,9 @@ Operations CLI (run inside a variant folder; it reads that variant's `.env`):
 | Express (HTTP + 14 acceptance scenarios) | `pnpm test:express` | 30 / 30 |
 | Fastify (HTTP + 14 acceptance scenarios) | `pnpm test:fastify` | 34 / 34 |
 | Next.js (components, route handlers, rendered pages, 14 acceptance scenarios) | `pnpm test:nextjs` | 108 / 108 |
+| NestJS (HTTP, lifecycle, 14 acceptance scenarios) | `pnpm test:nestjs` | 33 / 33 |
 
-Total: 380 tests, all passing. Type checks, lint, and production builds also pass
+Total: 413 tests, all passing. Type checks, lint, and production builds also pass
 (`pnpm typecheck`, `pnpm lint`, `pnpm build`, plus `typecheck:scripts` and `lint:scripts`).
 
 Run everything, one package at a time: `pnpm test`.
@@ -288,9 +294,9 @@ Rerun: load the bench data with
 | [database-design.md](docs/database-design.md) | Constraints, transaction boundaries, locking, indexes, pagination |
 | [graphql-design.md](docs/graphql-design.md) | Error model, pagination, DataLoader, limits, subscriptions |
 | [performance.md](docs/performance.md) | Targets, method, results |
-| [stack-comparison.md](docs/stack-comparison.md) | Express vs Fastify vs Next.js, with code links |
+| [stack-comparison.md](docs/stack-comparison.md) | Express vs Fastify vs Next.js vs NestJS, with code links |
 | [decisions/](docs/decisions/README.md) | Architecture decision records and tool versions |
-| Variant READMEs | [Express](implementations/express/README.md), [Fastify](implementations/fastify/README.md), [Next.js](implementations/nextjs/README.md) |
+| Variant READMEs | [Express](implementations/express/README.md), [Fastify](implementations/fastify/README.md), [Next.js](implementations/nextjs/README.md), [NestJS](implementations/nestjs/README.md) |
 
 ## Known limits
 

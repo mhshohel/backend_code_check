@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NestJS Variant Explorer</title>
+<link rel="stylesheet" href="assets/engine.css">
+</head>
+<body>
+<script src="assets/engine.js"></script>
+<script src="assets/scenarios.js"></script>
+<script>
+(function () {
+  const X = 215, W = 340;
+  const variant = [
+    { id: 'browser', label: 'React SPA', sub: 'Vite :9012 → API :9011\nRouter · Redux · urql', x: 20, y: 230, w: 160, h: 120, type: 'ui',
+      info: { does: '<p>The same shared SPA as the Express and Fastify variants (<code>packages/web-spa</code>), mounted by <code>implementations/nestjs/web</code> with NestJS ports. The browser cannot tell that Nest answers: same GraphQL contract, same cookies, same WebSocket protocol.</p>', file: ['packages/web-spa/src/', 'implementations/nestjs/web/'], tests: 'packages/web-spa/tests/' } },
+    { id: 'corr', label: 'correlationId', sub: 'app.use() before init', x: X, y: 44, w: W, h: 40, type: 'server',
+      at: { default: '<p>Plain Express middleware added with <code>app.use()</code> before <code>app.init()</code>, so it runs ahead of Nest\'s router for <b>every</b> request — also CORS preflights and unknown paths, which Nest middleware and interceptors would never see. Reads or generates <code>x-correlation-id</code>.</p>' },
+      info: { does: '<p>Global concern, stage 1.</p>', file: ['implementations/nestjs/api/common/correlation.ts', 'implementations/nestjs/api/create-app.ts'] } },
+    { id: 'metrics', label: 'httpMetrics', sub: 'app.use() · histogram + access log', x: X, y: 90, w: W, h: 40, type: 'server',
+      at: { default: '<p>Starts a timer; records method, route, status and duration when the response finishes. Not a Nest interceptor: interceptors run after guards and only for matched routes, so they would miss 404s, guard rejections and body-parser errors.</p>' },
+      info: { does: '<p>Global concern, stage 1.</p>', file: 'implementations/nestjs/api/common/http-metrics.ts' } },
+    { id: 'sec', label: 'helmet + app.enableCors()', sub: 'headers · origin allowlist', x: X, y: 136, w: W, h: 44, type: 'server',
+      at: { default: '<p>Helmet security headers, then CORS through Nest\'s <code>app.enableCors(options)</code> (the cors package underneath, same allowlist as Express). After this, Nest\'s router picks the controller, and only the middleware and guards declared for that controller run.</p>',
+        webhook: '<p>No Origin header from a server-to-server call, so CORS does not apply. Nest\'s router now matches <code>POST /webhooks/payments</code>.</p>' },
+      info: { does: '<p>Global concern, stage 1.</p>', file: ['implementations/nestjs/api/common/security.ts', 'implementations/nestjs/api/create-app.ts'] } },
+    { id: 'session', label: 'SessionMiddleware', sub: 'cookie-parser + resolveSession', x: X, y: 218, w: W, h: 40, type: 'ui',
+      at: { default: '<p>A class implementing <code>NestMiddleware</code>, bound in <code>AppModule.configure()</code> with <code>consumer.apply(cookieParser(), SessionMiddleware).forRoutes(AuthController, GraphQLController)</code>. Sets <code>res.locals.viewer</code>. The webhook and health controllers never get it.</p>' },
+      info: { does: '<p>Stage 2: module middleware, scoped by controller.</p>', file: ['implementations/nestjs/api/common/session.middleware.ts', 'implementations/nestjs/api/app.module.ts'] } },
+    { id: 'body', label: 'Body middleware', sub: 'JSON 100 KB · 415 · raw for webhook', x: X, y: 264, w: W, h: 40, type: 'ui',
+      at: { default: '<p>The app is created with <code>bodyParser: false</code>. <code>JsonBodyMiddleware</code> (100 KB, every JSON media type) is bound to /auth and /graphql; /graphql first gets <code>RequireJsonBodyMiddleware</code>, which answers 415 for non-JSON bodies so Yoga never reads a large raw stream.</p><p>Parser errors are <b>thrown</b> (the wrapper turns <code>next(err)</code> into a rejection), so they reach the Nest exception filter.</p>',
+        webhook: '<p><code>RawBodyMiddleware</code> is bound only to <code>POST webhooks/payments</code>: <code>express.raw()</code> keeps the exact bytes, because the HMAC covers them.</p>' },
+      info: { does: '<p>Stage 2. Note the difference from Express: here the body is parsed <i>before</i> the CSRF and rate-limit guards run, because Nest always runs middleware before guards.</p>', file: 'implementations/nestjs/api/common/body.middleware.ts' } },
+    { id: 'ratelimit', label: 'RateLimitGuard', sub: "@RateLimit('login' | 'graphql' | 'webhook')", x: X, y: 342, w: W, h: 38, type: 'ui',
+      at: { default: '<p>A guard (<code>CanActivate</code>) that reads the bucket from <code>@RateLimit(...)</code> metadata with <code>Reflector</code> and delegates to express-rate-limit, so counting and the <code>RateLimit-Policy</code> headers match the Express variant. Over the limit it throws <code>ApiError(429)</code>.</p>' },
+      info: { does: '<p>Stage 3: guards, declared with <code>@UseGuards(...)</code> on the controller.</p>', file: ['implementations/nestjs/api/common/rate-limit.guard.ts', 'implementations/nestjs/api/common/decorators.ts'] } },
+    { id: 'csrf', label: 'CsrfGuard', sub: 'POST without x-ofl-csrf → 403', x: X, y: 386, w: W, h: 38, type: 'ui',
+      at: { default: '<p>Allows safe methods; a POST needs <code>x-ofl-csrf: 1</code>. On /graphql the controller carries <code>@GraphQLErrors()</code>, so the guard throws an error the filter renders in GraphQL shape (<code>extensions.code = FORBIDDEN</code>).</p>' },
+      info: { does: '<p>Stage 3. On /auth it runs before the rate limit, on /graphql after it — the order of the classes in <code>@UseGuards</code>.</p>', file: 'implementations/nestjs/api/common/csrf.guard.ts' } },
+    { id: 'ctl-auth', label: 'Auth', sub: 'Controller', x: X, y: 464, w: 108, h: 50, type: 'server',
+      at: { auth: '<p><code>@Post(\'login\') @HttpCode(200) @RateLimit(\'login\')</code>. Calls <code>login(services, req.body, meta)</code>, sets the cookie with <code>res.cookie(...)</code> (<code>@Res({ passthrough: true })</code> lets Nest still serialize the return value).</p>' },
+      info: { does: '<p>POST /auth/login, /auth/logout.</p>', file: 'implementations/nestjs/api/auth/auth.controller.ts' } },
+    { id: 'ctl-graphql', label: 'GraphQL', sub: 'Controller', x: X + 116, y: 464, w: 108, h: 50, type: 'server',
+      at: { graphql: '<p><code>@All()</code> handler injects the Yoga instance (<code>@Inject(YOGA)</code>) and calls <code>yoga(req, res, { req, res })</code> with <code>@Res()</code>, so Yoga writes the response. The Yoga provider is built over <code>buildGraphQLSchema(services)</code> — no <code>@nestjs/graphql</code>, because the resolvers already live in server-core.</p>' },
+      info: { does: '<p>GraphQL over HTTP.</p>', file: ['implementations/nestjs/api/graphql/graphql.controller.ts', 'implementations/nestjs/api/graphql/yoga.provider.ts'] } },
+    { id: 'ctl-webhook', label: 'Webhooks', sub: 'Controller', x: X + 232, y: 464, w: 108, h: 50, type: 'ext',
+      at: { webhook: '<p>Passes the raw string and the <code>x-ofl-signature</code> header to <code>handlePaymentWebhook</code>, then writes its status and body. No CsrfGuard and no session middleware are declared for this controller.</p>' },
+      info: { does: '<p>POST /webhooks/payments.</p>', file: 'implementations/nestjs/api/webhooks/webhooks.controller.ts' } },
+    { id: 'filter', label: 'HttpExceptionFilter', sub: 'APP_FILTER · one error format', x: X, y: 540, w: W, h: 44, type: 'ext',
+      info: { does: '<p>Registered as <code>{ provide: APP_FILTER, useClass: HttpExceptionFilter }</code>, so it can inject services. It receives everything thrown by middleware, guards and handlers, and Nest\'s own 404 (<code>NotFoundException</code>). Output: <code>{ error, correlationId }</code>; GraphQL-shaped errors for guard rejections on /graphql; <code>index.html</code> for SPA routes in production; a logged 500 for anything unexpected.</p>', file: 'implementations/nestjs/api/common/http-exception.filter.ts' } },
+    { id: 'ws', label: 'GraphQLWebSocketService', sub: 'provider · onApplicationBootstrap', x: X, y: 604, w: W, h: 48, type: 'worker',
+      at: { ws: '<p>A provider, not a <code>@WebSocketGateway</code> (Nest gateways speak their own message format; the SPA speaks graphql-ws). In <code>onApplicationBootstrap</code> it takes Nest\'s HTTP server from <code>HttpAdapterHost</code> and listens to <code>upgrade</code>. Upgrades bypass Nest middleware and guards, so it checks the Origin allowlist and resolves the session cookie itself.</p>' },
+      info: { does: '<p>Closes all sockets with 1001 in <code>beforeApplicationShutdown</code>.</p>', file: 'implementations/nestjs/api/graphql/graphql-ws.service.ts' } },
+  ];
+  const nodes = [...OFL.sharedNodes(), ...variant];
+  const P = {
+    id: 'nestjs', name: 'NestJS', api: 'http://localhost:9011', web: 'http://localhost:9012', wsUrl: 'ws://localhost:9011/graphql',
+    esPrefix: 'ofl_nestjs_', db: 'ofl_nestjs',
+    paths: { graphql: '/graphql', login: '/auth/login', webhook: '/webhooks/payments' },
+    route: {
+      graphql: ['corr', 'metrics', 'sec', 'session', 'body', 'ratelimit', 'csrf', 'ctl-graphql'],
+      auth: ['corr', 'metrics', 'sec', 'session', 'body', 'csrf', 'ratelimit', 'ctl-auth'],
+      webhook: ['corr', 'metrics', 'sec', 'body', 'ratelimit', 'ctl-webhook'],
+      ws: ['ws'],
+    },
+    uiLogin: 'auth', uiSearch: 'graphql', uiPrice: 'graphql',
+    webhookSummary: 'In NestJS the webhook controller gets only RawBodyMiddleware and RateLimitGuard; the session middleware and the CSRF guard are declared for other controllers and never run here.',
+    nodeMap: null,
+  };
+  P.nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
+
+  const scenarios = OFL.buildScenarios(P);
+  const gql = ['browser', 'corr', 'metrics', 'sec', 'session', 'body', 'ratelimit', 'csrf'];
+  scenarios.push({
+    id: 'errors', title: 'Errors → exception filter', role: 'NestJS', tests: ['http.test.ts: CSRF, 404, malformed JSON'],
+    summary: 'Three requests that fail at different stages: a guard, Nest\'s router and a body parser. All three end in the same HttpExceptionFilter, which writes one error format.',
+    init: {},
+    steps: [
+      { kind: 'http', path: gql, label: 'POST /graphql (no x-ofl-csrf)', title: 'A cross-site style request without the CSRF header',
+        body: '<p>Middleware runs first: the session is resolved and the body parsed (bounded at 100 KB). Then the guards run in <code>@UseGuards</code> order: the rate limit passes, the CSRF guard does not.</p>',
+        code: 'POST /graphql\nContent-Type: application/json\n\n{"query":"{ viewer { id } }"}' },
+      { kind: 'error', from: 'csrf', to: 'filter', label: 'throw ApiError(403, FORBIDDEN)', title: 'The guard throws',
+        body: '<p>Because the controller has <code>@GraphQLErrors()</code> metadata, the guard attaches a GraphQL code. The handler and Yoga never run.</p>' },
+      { kind: 'error', back: true, from: 'filter', to: 'browser', label: '403 { errors: [...] }', title: 'GraphQL-shaped error',
+        code: '{"errors":[{"message":"Missing x-ofl-csrf header.","extensions":{"code":"FORBIDDEN","correlationId":"…"}}]}', set: { kv: { 'Last reply': '403 FORBIDDEN' } } },
+      { kind: 'http', path: ['browser', 'corr', 'metrics', 'sec'], label: 'GET /nope', title: 'No controller matches',
+        body: '<p>Stage 1 still ran (correlation id, metrics), because it is plain Express middleware.</p>' },
+      { kind: 'error', from: 'sec', to: 'filter', label: 'NotFoundException', title: 'Nest\'s router raises 404',
+        body: '<p>Nest throws <code>NotFoundException</code> through the global filters. In production the filter answers <code>index.html</code> for browser routes (<code>/orders/123</code>), so the SPA handles them.</p>' },
+      { kind: 'error', back: true, from: 'filter', to: 'browser', label: '404 { error }', title: 'Same error format as Express', code: '{"error":"Not found.","correlationId":"…"}', set: { kv: { 'Last reply': '404 Not found.' } } },
+      { kind: 'http', path: ['browser', 'corr', 'metrics', 'sec', 'session', 'body'], label: 'POST /auth/login {"email":', title: 'Broken JSON',
+        code: 'POST /auth/login\nx-ofl-csrf: 1\nContent-Type: application/json\n\n{"email":' },
+      { kind: 'error', from: 'body', to: 'filter', label: 'throw parse error', title: 'The parser error is thrown, not passed to next()',
+        body: '<p>express.json reports <code>entity.parse.failed</code> through <code>next(err)</code>. In Nest that would go to Express\'s default handler (HTML) and skip the filter. <code>JsonBodyMiddleware</code> awaits the parser in a promise and rethrows.</p>' },
+      { kind: 'error', back: true, from: 'filter', to: 'browser', label: '400 { error }', title: 'Clean 400', code: '{"error":"Request body is not valid JSON.","correlationId":"…"}', set: { kv: { 'Last reply': '400 invalid JSON' } } },
+    ],
+    try: `<pre class="code">${OFL.esc("curl -i -X POST http://localhost:9011/graphql -H 'content-type: application/json' -d '{\"query\":\"{ viewer { id } }\"}'\ncurl -i http://localhost:9011/nope\ncurl -i -X POST http://localhost:9011/auth/login -H 'content-type: application/json' -H 'x-ofl-csrf: 1' -d '{\"email\":'")}</pre>`,
+  });
+  scenarios.push({
+    id: 'shutdown', title: 'Shutdown: app.close() lifecycle', role: 'NestJS', tests: ['http.test.ts: NestJS lifecycle'],
+    summary: 'SIGTERM calls app.close(). Nest runs the hooks in a fixed order: close WebSockets, close the HTTP server, close the services. The worker process does the same with worker.stop().',
+    init: { kv: { 'API HTTP': 'listening', WebSockets: '1 open', 'DB pool': 'open', Worker: 'running' } },
+    steps: [
+      { kind: 'internal', from: 'corr', label: 'SIGTERM → app.close()', title: 'Signal received',
+        body: '<p><code>api/main.ts</code> binds SIGTERM/SIGINT itself (instead of <code>enableShutdownHooks()</code>) to keep the same second-signal and 15 s timeout behavior as the other variants, then calls <code>app.close()</code>.</p>' },
+      { kind: 'ws', back: true, path: ['ws', 'browser'], label: 'close 1001 Going Away', title: '1. beforeApplicationShutdown: WebSockets',
+        body: '<p><code>GraphQLWebSocketService</code> stops accepting upgrades and closes every socket with 1001, so the SPA reconnects (to this instance after a restart, or to another one) and re-subscribes, which re-sends the current order state.</p>',
+        set: { kv: { WebSockets: 'closed (1001)' } } },
+      { kind: 'job', from: 'worker', to: 'pg', label: 'worker: stop(), finish jobs', title: 'Worker process: the same hook',
+        body: '<p>In the worker process, <code>WorkerRunner.beforeApplicationShutdown</code> calls <code>worker.stop()</code>: no new claims, in-flight jobs finish and are acknowledged.</p>', set: { kv: { Worker: 'stopped' } } },
+      { kind: 'internal', from: 'sec', label: 'HTTP server close', title: '2. Nest closes the HTTP server',
+        body: '<p>No new connections; idle keep-alive connections close; in-flight requests finish.</p>', set: { kv: { 'API HTTP': 'closed' } } },
+      { kind: 'sql', from: 'hub', to: 'pg', label: 'closeServices()', title: '3. onApplicationShutdown: services',
+        body: '<p><code>CoreModule</code>\'s lifecycle provider closes the database pool, the LISTEN connection and the Elasticsearch client — last, because in-flight requests needed them until step 2 finished. The test checks that a query fails afterwards.</p>',
+        set: { kv: { 'DB pool': 'closed' } } },
+    ],
+    try: '<p>Run <code>make nestjs-dev</code>, open an order page, then press Ctrl+C in the terminal and watch the log lines. The SPA shows the connection dropping and reconnecting after you restart.</p>',
+  });
+
+  OFL.mount({
+    page: 'nestjs.html',
+    title: 'NestJS 12 variant (Express platform)',
+    intro: 'The same Express 5 underneath, organized by NestJS: global Express middleware, then Nest middleware bound per controller, then guards, then the controller, with one exception filter catching everything. The stages are fixed by Nest; which ones apply is declared next to each controller. Dependencies are injected by explicit tokens.',
+    chips: ['API :9011', 'Web (Vite) :9012', 'Worker health :9013', 'DB ofl_nestjs', 'make nestjs-dev', 'make nestjs-test → 33 tests'],
+    viewBox: [1120, 680], defaultUrl: P.web,
+    groups: [
+      { label: 'NESTJS PROCESS :9011', x: 200, y: 14, w: 370, h: 652 },
+      { label: 'NEST MIDDLEWARE · configure()', x: 207, y: 192, w: 356, h: 118 },
+      { label: 'GUARDS · @UseGuards', x: 207, y: 318, w: 356, h: 112 },
+      { label: 'CONTROLLERS', x: 207, y: 438, w: 356, h: 84 },
+      { label: '@OFL/SERVER-CORE (same process)', x: 590, y: 14, w: 220, h: 420 },
+    ],
+    nodes,
+    links: [...OFL.sharedLinks, ['browser', 'corr'], ['provider', 'corr'], ['corr', 'metrics'], ['metrics', 'sec'], ['sec', 'session'], ['session', 'body'], ['body', 'ratelimit'], ['ratelimit', 'csrf'], ['csrf', 'ctl-graphql'], ['ctl-graphql', 'core-gql'], ['ctl-webhook', 'core-ops'], ['browser', 'ws'], ['ws', 'hub']],
+    scenarios,
+  });
+})();
+</script>
+</body>
+</html>

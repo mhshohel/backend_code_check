@@ -1,23 +1,23 @@
-# Stack comparison: Express, Fastify, Next.js
+# Stack comparison: Express, Fastify, Next.js, NestJS
 
-All three variants serve the same GraphQL contract from the same application
+All four variants serve the same GraphQL contract from the same application
 layer (`@ofl/server-core`) and pass the same 14 acceptance scenarios. The
 differences below are therefore differences of framework mechanics, not of
 business behavior.
 
 ## 1. Summary
 
-| Concern | Express 5 | Fastify 5 | Next.js 16 (App Router) |
-| --- | --- | --- | --- |
-| Composition model | Ordered middleware chain | Plugin tree with encapsulation + lifecycle hooks | File-system routes, layouts, route handlers, Server Actions |
-| Where order matters | `app.use` order in one file | Hook phase (`onRequest`, `preValidation`, `preHandler`, …) and plugin scope | Rendering boundary (server vs client) and route segment config |
-| Request validation | Manual (or middleware) | Built-in JSON Schema on routes | Manual in route handlers / actions |
-| Raw body for the webhook | `express.raw()` on one route | Scoped content-type parser | `await request.text()` |
-| GraphQL over HTTP | `yoga(req, res, ctx)` as middleware | `yoga.handleNodeRequestAndResponse` + `reply.send` | Yoga's fetch handler in a route handler |
-| WebSocket subscriptions | `ws` server on the same HTTP server | `@fastify/websocket` route with `wsHandler` | Separate realtime process (route handlers cannot upgrade) |
-| Logging | pino added as middleware | pino built in (`request.log`, `genReqId`) | pino from server-core |
-| Graceful shutdown | Own signal handler, close HTTP + ws + services | `fastify.close()` runs `onClose` hooks | `next start` process + own handlers for realtime and worker |
-| UI | Shared SPA (`packages/web-spa`) | Shared SPA | Server Components + client components |
+| Concern | Express 5 | Fastify 5 | Next.js 16 (App Router) | NestJS 12 (Express platform) |
+| --- | --- | --- | --- | --- |
+| Composition model | Ordered middleware chain | Plugin tree with encapsulation + lifecycle hooks | File-system routes, layouts, route handlers, Server Actions | Modules, controllers, providers with dependency injection |
+| Where order matters | `app.use` order in one file | Hook phase (`onRequest`, `preValidation`, `preHandler`, …) and plugin scope | Rendering boundary (server vs client) and route segment config | Fixed lifecycle: middleware → guards → interceptors → pipes → handler → filters |
+| Request validation | Manual (or middleware) | Built-in JSON Schema on routes | Manual in route handlers / actions | Pipes (not used: server-core validates with zod) |
+| Raw body for the webhook | `express.raw()` on one route | Scoped content-type parser | `await request.text()` | `bodyParser: false` + `express.raw()` as middleware bound to one route |
+| GraphQL over HTTP | `yoga(req, res, ctx)` as middleware | `yoga.handleNodeRequestAndResponse` + `reply.send` | Yoga's fetch handler in a route handler | Yoga instance (provider) called from a controller with `@Res()` |
+| WebSocket subscriptions | `ws` server on the same HTTP server | `@fastify/websocket` route with `wsHandler` | Separate realtime process (route handlers cannot upgrade) | `ws` on Nest's HTTP server, attached by a provider's lifecycle hook |
+| Logging | pino added as middleware | pino built in (`request.log`, `genReqId`) | pino from server-core | pino from server-core; Nest's own logs bridged with a `LoggerService` |
+| Graceful shutdown | Own signal handler, close HTTP + ws + services | `fastify.close()` runs `onClose` hooks | `next start` process + own handlers for realtime and worker | `app.close()`: `beforeApplicationShutdown` → HTTP close → `onApplicationShutdown` |
+| UI | Shared SPA (`packages/web-spa`) | Shared SPA | Server Components + client components | Shared SPA |
 
 ## 2. Express
 
@@ -134,7 +134,45 @@ What to notice:
 - **No WebSocket upgrade in route handlers.** The realtime service runs on its
   own port; cookies are host-scoped, so the browser still sends the session.
 
-## 5. When to choose which
+## 5. NestJS
+
+Entry: [`implementations/nestjs/api/app.module.ts`](../implementations/nestjs/api/app.module.ts)
+and [`create-app.ts`](../implementations/nestjs/api/create-app.ts). Full
+walkthrough: [`implementations/nestjs/README.md`](../implementations/nestjs/README.md).
+Decisions: [ADR 0010](decisions/0010-nestjs-variant.md).
+
+The same Express 5 underneath, organized by NestJS:
+
+| Stage | Applied to | Code |
+| --- | --- | --- |
+| Express middleware (`app.use`) | every request | correlation id, metrics, helmet, CORS |
+| Nest middleware (`configure()`) | per controller | cookie + session for `/auth`, `/graphql`; JSON parser; raw parser for the webhook |
+| Guards (`@UseGuards`) | per controller | `CsrfGuard`, `RateLimitGuard` (configured by `@RateLimit`, `@GraphQLErrors` metadata) |
+| Handler | – | one call into server-core, or Yoga for `/graphql` |
+| Exception filter (`APP_FILTER`) | everything | one error format; Nest's 404; SPA fallback in production |
+
+What to notice:
+
+- **Structure replaces ordering.** Which middleware and guards a route gets is
+  declared next to the controller, not by position in one list. The order
+  *between* kinds is fixed by Nest: middleware always before guards. So the
+  body is parsed before the CSRF and rate-limit checks, unlike Express.
+- **Global concerns are still Express middleware.** Nest middleware and
+  interceptors only see requests that reach the router; CORS preflights,
+  404s and body-parser errors would bypass them.
+- **Errors from middleware must be thrown.** An Express body parser reports
+  errors with `next(err)`, which would skip the Nest exception filter; the
+  wrapper turns it into a thrown error.
+- **DI without type metadata.** tsx and esbuild do not emit
+  `design:paramtypes`, so every dependency is injected by an explicit token.
+- **No `@nestjs/graphql`, no gateway.** The schema and resolvers already live
+  in server-core, and the SPA speaks graphql-ws. Yoga runs behind a
+  controller; graphql-ws is attached in `onApplicationBootstrap`.
+- **Lifecycle hooks give the drain order.** `app.close()` closes WebSockets,
+  then the HTTP server, then the services — the same order the Express variant
+  writes by hand.
+
+## 6. When to choose which
 
 | Situation | Better fit | Reason |
 | --- | --- | --- |
@@ -142,6 +180,7 @@ What to notice:
 | API with many routes, strict input validation, high request rate | Fastify | Schema validation, encapsulation, built-in logging, lower overhead per request. |
 | Public content that must render fast and be indexed, plus interactive areas | Next.js | Server rendering and streaming for public pages, client components for workflows. |
 | Long-lived WebSocket connections at scale | Express or Fastify (or a dedicated service) | Next.js route handlers cannot upgrade connections; a separate process is needed anyway. |
+| Large API, several teams, many cross-cutting rules | NestJS | Modules and DI give a fixed place for every concern; guards, filters and providers are reusable and testable in isolation. Costs: decorators, a DI container, and its own lifecycle to learn. |
 
 These are tendencies, not rules. In this lab the business code is identical, so
 the measurable difference between Express and Fastify is the HTTP overhead;

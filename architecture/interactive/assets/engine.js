@@ -20,6 +20,7 @@
     ['express.html', 'Express'],
     ['fastify.html', 'Fastify'],
     ['nextjs.html', 'Next.js'],
+    ['nestjs.html', 'NestJS'],
     ['core.html', 'Shared core & worker'],
   ];
 

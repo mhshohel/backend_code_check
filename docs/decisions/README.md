@@ -11,3 +11,4 @@
 | [0007](0007-realtime-through-postgres-notify.md) | PostgreSQL LISTEN/NOTIFY as the cross-process live hint |
 | [0008](0008-tooling-versions.md) | Tooling and package versions |
 | [0009](0009-graphql-cost-and-websocket-scope.md) | Root-field cost and subscriptions-only WebSocket |
+| [0010](0010-nestjs-variant.md) | NestJS variant: Yoga controller, explicit injection tokens, per-controller body parsers |

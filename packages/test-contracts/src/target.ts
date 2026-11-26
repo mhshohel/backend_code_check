@@ -1,6 +1,6 @@
 import type { AppConfig } from '@ofl/server-core';
 
-export type VariantName = 'express' | 'fastify' | 'nextjs';
+export type VariantName = 'express' | 'fastify' | 'nextjs' | 'nestjs';
 
 export type TargetHttp = {
   baseUrl: string;

@@ -2,25 +2,25 @@
 
 | | |
 | --- | --- |
-| Status | Implemented (final test run 2026-11-25: 380 / 380 passing) |
+| Status | Implemented (final test run 2026-11-26: 413 / 413 passing) |
 | Type | Learning and interview-preparation project; not deployed, no production data |
 | Normative spec | [`docs/requirements.md`](../docs/requirements.md) (this PRD summarizes it; on conflict the spec wins) |
 
 ## 1. Problem
 
 Comparisons between Node.js frameworks usually compare toy "hello world"
-apps. They do not show how Express, Fastify and Next.js differ when the
+apps. They do not show how Express, Fastify, Next.js and NestJS differ when the
 application has real problems: concurrent stock reservations, payments that
 arrive twice or late, background jobs that crash halfway, live updates
 across processes, and security rules at the HTTP edge.
 
-This project builds one realistic product three times, with the business code
+This project builds one realistic product four times, with the business code
 shared, so that every difference that remains is a framework difference.
 
 ## 2. Goals
 
 1. One order fulfillment and inventory product with real concurrency and failure handling.
-2. Three implementations (Express 5, Fastify 5, Next.js 16) with identical behavior, proven by one shared acceptance suite.
+2. Four implementations (Express 5, Fastify 5, Next.js 16, NestJS 12) with identical behavior, proven by one shared acceptance suite.
 3. Business rules live once (`@ofl/domain`, `@ofl/server-core`); framework code contains none.
 4. Measured performance evidence, with honest caveats.
 5. Documentation a reader can use to understand and explain the system: written docs, diagrams, and interactive walkthroughs.
@@ -94,7 +94,7 @@ Full numbers and caveats: root [`README.md`](../README.md#benchmark-report), [`d
 
 ### 4.5 Operability
 
-Each variant has its own database, index prefix, ports and worker, so all three
+Each variant has its own database, index prefix, ports and worker, so all four
 run side by side. Health (`/health/live`, `/health/ready`), Prometheus metrics,
 correlation ids in logs, audit rows and outbox events. Graceful shutdown in
 every process. One-command workflows in the `Makefile`.
@@ -102,7 +102,7 @@ every process. One-command workflows in the `Makefile`.
 ## 5. Architecture summary
 
 ```
-Browser ──GraphQL/HTTP + cookie──▶ Express | Fastify | Next.js ──▶ @ofl/server-core ──▶ PostgreSQL
+Browser ──GraphQL/HTTP + cookie──▶ Express | Fastify | Next.js | NestJS ──▶ @ofl/server-core ──▶ PostgreSQL
         ◀──────graphql-ws─────────  (realtime hub, LISTEN)       │   one transaction:    ▲   │
                                                                    │   rows + outbox +     │   │ outbox jobs
 Payment provider ──signed webhook──▶ same handler ◀───────────────┘   pg_notify           │   ▼
@@ -112,7 +112,8 @@ Payment provider ──signed webhook──▶ same handler ◀─────�
 Decisions and their reasons are recorded as ADRs in
 [`docs/decisions/`](../docs/decisions/README.md): row locks for reservations,
 outbox as job queue, search versioning, shared SPA, shared application layer,
-sessions and CSRF, realtime through NOTIFY, GraphQL cost and WebSocket scope.
+sessions and CSRF, realtime through NOTIFY, GraphQL cost and WebSocket scope,
+and the NestJS integration choices (ADR 0010).
 
 ## 6. Documentation deliverable (this folder)
 
@@ -124,10 +125,10 @@ not write the code and need to understand it."
 
 | ID | Requirement | Delivered |
 | --- | --- | --- |
-| D1 | draw.io diagrams of the system and each project | `diagrams/01–10` (`.drawio` + `.drawio.svg`) |
+| D1 | draw.io diagrams of the system and each project | `diagrams/01–11` (`.drawio` + `.drawio.svg`) |
 | D2 | Component responsibilities and code locations | `README.md` §4, "Component" tab on every interactive box |
 | D3 | How to test, also as Makefile targets | `README.md` §5; new targets `test-domain`, `test-core`, `test-spa`, `test-scenario`, `architecture`, `diagrams` |
-| D4 | Interactive per-project walkthroughs with animated requests | `interactive/` — Express, Fastify, Next.js (11 scenarios each), shared core (7 scenarios), overview hub |
+| D4 | Interactive per-project walkthroughs with animated requests | `interactive/` — Express, Fastify, Next.js (11 scenarios each), NestJS (13), shared core (7 scenarios), overview hub |
 | D5 | Cover the user's view through to webhooks and background work | Every scenario starts at the user or the payment provider and shows the browser screen, the framework hops, SQL, outbox jobs, worker, gateway, NOTIFY and the live update |
 | D6 | Link explanations to evidence | Each scenario lists the tests that prove it; the hub maps S1–S14 to walkthroughs |
 | D7 | No build step, works offline | Plain HTML/CSS/JS; open the file or `make architecture` |
@@ -141,6 +142,11 @@ not write the code and need to understand it."
   writing this).
 - Every page runs all of its scenario steps without script errors (checked with
   a headless browser run over every step of every scenario).
+
+### Change log
+
+- 2026-11-26: fourth variant, NestJS 12 (`implementations/nestjs`, ports 9011–9013, 33 tests),
+  added on request ("build the NestJS version"); interactive page `nestjs.html`, diagram 11, ADR 0010.
 
 ## 7. Known limits and open questions
 

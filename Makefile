@@ -6,16 +6,18 @@
 #   Express  API 9001  web 9002  worker 9004
 #   Fastify  API 9005  web 9006  worker 9007
 #   Next.js  app 9008  realtime 9009  worker 9010
+#   NestJS   API 9011  web 9012  worker 9013
 
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-PORTS := 9001 9002 9004 9005 9006 9007 9008 9009 9010
+PORTS := 9001 9002 9004 9005 9006 9007 9008 9009 9010 9011 9012 9013
 
 .PHONY: help setup install infra-up infra-down db-create codegen \
 	express-seed express-dev express-build express-start express-test express-check express-open \
 	fastify-seed fastify-dev fastify-build fastify-start fastify-test fastify-check fastify-open \
 	nextjs-seed nextjs-dev nextjs-build nextjs-start nextjs-test nextjs-check nextjs-open \
+	nestjs-seed nestjs-dev nestjs-build nestjs-start nestjs-test nestjs-check nestjs-open \
 	seed-all dev-all build-all start-all test-all test-packages check-all status stop bench \
 	test-domain test-core test-spa test-scenario architecture diagrams
 
@@ -110,26 +112,51 @@ nextjs-check: ## Next.js: type check and lint
 nextjs-open: ## Next.js: open the app in the browser
 	open http://localhost:9008
 
+# --- NestJS (API 9011, web 9012, worker 9013) -------------------------------
+
+nestjs-seed: ## NestJS: reset database and load demo data
+	pnpm reset:nestjs
+
+nestjs-dev: ## NestJS: dev servers -> http://localhost:9012
+	pnpm dev:nestjs
+
+nestjs-build: ## NestJS: production build
+	pnpm build:nestjs
+
+nestjs-start: nestjs-build ## NestJS: build, then run production -> http://localhost:9011
+	pnpm start:nestjs
+
+nestjs-test: ## NestJS: all tests (HTTP + lifecycle + 14 acceptance scenarios)
+	pnpm test:nestjs
+
+nestjs-check: ## NestJS: type check and lint
+	pnpm typecheck:nestjs && pnpm lint:nestjs
+
+nestjs-open: ## NestJS: open the dev UI in the browser
+	open http://localhost:9012
+
 # --- All variants -----------------------------------------------------------
 
-seed-all: express-seed fastify-seed nextjs-seed ## Reset and seed all three databases
+seed-all: express-seed fastify-seed nextjs-seed nestjs-seed ## Reset and seed all four databases
 
-dev-all: ## Run all three variants in dev mode at once (Ctrl+C stops all)
-	$(MAKE) -j3 express-dev fastify-dev nextjs-dev
+dev-all: ## Run all four variants in dev mode at once (Ctrl+C stops all)
+	$(MAKE) -j4 express-dev fastify-dev nextjs-dev nestjs-dev
 
 build-all: ## Production build of everything
 	pnpm build
 
-start-all: build-all ## Build, then run all three in production mode at once
-	$(MAKE) -j3 express-start-only fastify-start-only nextjs-start-only
+start-all: build-all ## Build, then run all four in production mode at once
+	$(MAKE) -j4 express-start-only fastify-start-only nextjs-start-only nestjs-start-only
 
-.PHONY: express-start-only fastify-start-only nextjs-start-only
+.PHONY: express-start-only fastify-start-only nextjs-start-only nestjs-start-only
 express-start-only:
 	pnpm start:express
 fastify-start-only:
 	pnpm start:fastify
 nextjs-start-only:
 	pnpm start:nextjs
+nestjs-start-only:
+	pnpm start:nestjs
 
 test-all: ## All tests, one package at a time (about 6 minutes)
 	pnpm test
@@ -165,7 +192,8 @@ check-all: ## Type check and lint everything
 status: ## Show which lab servers are running and healthy
 	@for spec in "Express-API 9001 /health/live" "Express-web 9002 /" "Express-worker 9004 /health/live" \
 	             "Fastify-API 9005 /health/live" "Fastify-web 9006 /" "Fastify-worker 9007 /health/live" \
-	             "Next.js-app 9008 /api/health/live" "Next.js-realtime 9009 /health/live" "Next.js-worker 9010 /health/live"; do \
+	             "Next.js-app 9008 /api/health/live" "Next.js-realtime 9009 /health/live" "Next.js-worker 9010 /health/live" \
+	             "NestJS-API 9011 /health/live" "NestJS-web 9012 /" "NestJS-worker 9013 /health/live"; do \
 	  set -- $$spec; \
 	  code=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://localhost:$$2$$3"); \
 	  if [ "$$code" = "000" ]; then state="stopped"; else state="up ($$code)"; fi; \

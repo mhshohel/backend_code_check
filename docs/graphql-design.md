@@ -1,12 +1,12 @@
 # GraphQL design
 
 The contract is [`contracts/schema.graphql`](../contracts/schema.graphql). All
-three variants serve it unchanged from the shared resolvers in
+four variants serve it unchanged from the shared resolvers in
 `packages/server-core/src/graphql/`.
 
 ## 1. Why GraphQL for business operations
 
-- One typed contract for three different servers and two different UIs.
+- One typed contract for four different servers and two different UIs.
 - Generated TypeScript types for the server (resolver signatures) and the
   clients (typed documents), so a schema change breaks the build instead of
   production.

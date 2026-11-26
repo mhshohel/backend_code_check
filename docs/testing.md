@@ -27,13 +27,14 @@ connections and run real transactions at the same time.
 | Express | `ofl_express_test` | `ofl_express_test_` |
 | Fastify | `ofl_fastify_test` | `ofl_fastify_test_` |
 | Next.js | `ofl_nextjs_test` | `ofl_nextjs_test_` |
+| NestJS | `ofl_nestjs_test` | `ofl_nestjs_test_` |
 
 Suites within one package run serially (`--runInBand`) because they share a
 database. Different packages can run at the same time, except server-core and
 test-fixtures, which share `ofl_core_test`. Root `pnpm test` runs one package
 at a time.
 
-## 3. How the acceptance suite runs against three frameworks
+## 3. How the acceptance suite runs against four frameworks
 
 Each variant has one test file that starts its own server and hands a target
 description to the shared suite:
@@ -46,7 +47,8 @@ defineAcceptanceSuite(() => target);
 
 Files: [Express](../implementations/express/tests/acceptance.test.ts),
 [Fastify](../implementations/fastify/tests/acceptance.test.ts),
-[Next.js](../implementations/nextjs/tests/acceptance/acceptance.test.ts).
+[Next.js](../implementations/nextjs/tests/acceptance/acceptance.test.ts),
+[NestJS](../implementations/nestjs/tests/acceptance.test.ts).
 
 The suite resets the database to the `contract` fixture, signs in through the
 variant's login endpoint, sends GraphQL over HTTP with the session cookie and
@@ -103,7 +105,7 @@ The Next.js variant therefore tests:
 | Scope | Command |
 | --- | --- |
 | Everything, one package at a time | `pnpm test` |
-| One variant | `pnpm test:express`, `pnpm test:fastify`, `pnpm test:nextjs` |
+| One variant | `pnpm test:express`, `pnpm test:fastify`, `pnpm test:nextjs`, `pnpm test:nestjs` |
 | Shared packages | `pnpm --filter @ofl/domain test`, `pnpm --filter @ofl/server-core test` |
 | One acceptance scenario | `cd implementations/fastify && pnpm test -t "S9 "` (or `make test-scenario VARIANT=fastify S=S9`) |
 | Type check / lint everything | `pnpm typecheck && pnpm typecheck:scripts`, `pnpm lint && pnpm lint:scripts` |

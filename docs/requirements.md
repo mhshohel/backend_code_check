@@ -1,7 +1,7 @@
 # Requirements and shared specification
 
 This document is the contract between the coordinator and the implementation
-agents. All three variants (Express, Fastify, Next.js) implement the same
+agents. All four variants (Express, Fastify, Next.js, NestJS) implement the same
 behavior. When code and this document disagree, fix one of them and record
 the decision in `docs/decisions/`.
 
@@ -295,6 +295,7 @@ Operators retry FAILED jobs from the admin dashboard (`retryJob`) or the CLI.
 | Express | 9001 | 9002 | 9001 | 9004 | `ofl_express` | `ofl_express_test` | `ofl_express_` |
 | Fastify | 9005 | 9006 | 9005 | 9007 | `ofl_fastify` | `ofl_fastify_test` | `ofl_fastify_` |
 | Next.js | 9008 | 9008 | 9009 | 9010 | `ofl_nextjs` | `ofl_nextjs_test` | `ofl_nextjs_` |
+| NestJS | 9011 | 9012 | 9011 | 9013 | `ofl_nestjs` | `ofl_nestjs_test` | `ofl_nestjs_` |
 | Shared package tests | – | – | – | – | `ofl_core_test` | – | `ofl_coretest_` |
 
 Test index prefixes add `test_` (for example `ofl_express_test_`).

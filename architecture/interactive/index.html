@@ -18,6 +18,7 @@
     <a class="card pcard" href="express.html"><h3>Express 5</h3><p>An ordered middleware chain. Learn why the webhook is mounted before cookies are parsed and why WebSocket upgrades skip the chain.</p><div class="chips"><span class="chip">:9001 API</span><span class="chip">:9002 web</span><span class="chip">11 scenarios</span></div></a>
     <a class="card pcard" href="fastify.html"><h3>Fastify 5</h3><p>A plugin tree with lifecycle hooks. Encapsulated scopes decide which hooks a request runs — not registration order.</p><div class="chips"><span class="chip">:9005 API</span><span class="chip">:9006 web</span><span class="chip">11 scenarios</span></div></a>
     <a class="card pcard" href="nextjs.html"><h3>Next.js 16</h3><p>Server Components read in-process, Server Actions handle forms, guarded route handlers serve GraphQL, a separate process serves WebSockets.</p><div class="chips"><span class="chip">:9008 app</span><span class="chip">:9009 realtime</span><span class="chip">11 scenarios</span></div></a>
+    <a class="card pcard" href="nestjs.html"><h3>NestJS 12</h3><p>Express underneath, organized by Nest: middleware bound per controller, guards with metadata, one exception filter, lifecycle hooks for WebSockets and shutdown.</p><div class="chips"><span class="chip">:9011 API</span><span class="chip">:9012 web</span><span class="chip">13 scenarios</span></div></a>
     <a class="card pcard" href="core.html"><h3>Shared core &amp; worker</h3><p>The transactional outbox, crash recovery, retries and backoff, out-of-order search events, the expiry sweeper and operations commands.</p><div class="chips"><span class="chip">server-core</span><span class="chip">domain</span><span class="chip">7 scenarios</span></div></a>
   </div>
 
@@ -25,8 +26,8 @@
   <div class="card detail">
     <table class="plain">
       <tr><th style="width:190px">Stage</th><th>What happens</th><th style="width:260px">Where</th></tr>
-      <tr><td>1. Browser</td><td>React SPA (Express, Fastify) or Next.js pages send GraphQL over HTTP with the <code>ofl_session</code> cookie and the <code>x-ofl-csrf: 1</code> header; live order status uses graphql-ws.</td><td><code>packages/web-spa</code>, <code>implementations/nextjs/app</code></td></tr>
-      <tr><td>2. Framework</td><td>Correlation id, security headers, CORS, rate limit, session, CSRF — expressed as middleware (Express), hooks in scopes (Fastify) or guards around route handlers (Next.js).</td><td><code>implementations/*/api</code>, <code>nextjs/modules/server/http</code></td></tr>
+      <tr><td>1. Browser</td><td>React SPA (Express, Fastify, NestJS) or Next.js pages send GraphQL over HTTP with the <code>ofl_session</code> cookie and the <code>x-ofl-csrf: 1</code> header; live order status uses graphql-ws.</td><td><code>packages/web-spa</code>, <code>implementations/nextjs/app</code></td></tr>
+      <tr><td>2. Framework</td><td>Correlation id, security headers, CORS, rate limit, session, CSRF — expressed as middleware (Express), hooks in scopes (Fastify), middleware + guards + an exception filter (NestJS) or guards around route handlers (Next.js).</td><td><code>implementations/*/api</code>, <code>nextjs/modules/server/http</code></td></tr>
       <tr><td>3. GraphQL</td><td>Thin resolvers: check the viewer, parse input, call one operation, map the result to a typed union.</td><td><code>packages/server-core/src/graphql</code></td></tr>
       <tr><td>4. Operation</td><td>One transaction: business rows + outbox rows + <code>pg_notify</code>. Pure rules from <code>@ofl/domain</code>. Row locks in a fixed order prevent overselling.</td><td><code>packages/server-core/src/features</code></td></tr>
       <tr><td>5. Worker</td><td>Claims outbox jobs (<code>SKIP LOCKED</code>, 30 s lease), calls the payment gateway or Elasticsearch with idempotency keys, retries with backoff.</td><td><code>packages/server-core/src/worker</code></td></tr>
@@ -53,12 +54,12 @@
     <table class="plain">
       <tr><th style="width:290px">Command</th><th>Effect</th></tr>
       <tr><td><code>make setup</code></td><td>First run: <code>pnpm install</code>, start Elasticsearch (Docker), create all databases</td></tr>
-      <tr><td><code>make seed-all</code></td><td>Reset and load demo data into the three databases</td></tr>
-      <tr><td><code>make dev-all</code></td><td>Run Express, Fastify and Next.js together; open :9002, :9006, :9008</td></tr>
-      <tr><td><code>make status</code> / <code>make stop</code></td><td>Which of the 9 lab servers are up / stop them</td></tr>
-      <tr><td><code>make test-all</code></td><td>All 380 tests, one package at a time (≈ 6 min)</td></tr>
+      <tr><td><code>make seed-all</code></td><td>Reset and load demo data into the four databases</td></tr>
+      <tr><td><code>make dev-all</code></td><td>Run Express, Fastify, Next.js and NestJS together; open :9002, :9006, :9008, :9012</td></tr>
+      <tr><td><code>make status</code> / <code>make stop</code></td><td>Which of the 12 lab servers are up / stop them</td></tr>
+      <tr><td><code>make test-all</code></td><td>All 413 tests, one package at a time (≈ 6 min)</td></tr>
       <tr><td><code>make test-domain</code> · <code>test-core</code> · <code>test-spa</code></td><td>One shared package</td></tr>
-      <tr><td><code>make express-test</code> · <code>fastify-test</code> · <code>nextjs-test</code></td><td>One variant: HTTP tests + the 14 scenarios</td></tr>
+      <tr><td><code>make express-test</code> · <code>fastify-test</code> · <code>nextjs-test</code> · <code>nestjs-test</code></td><td>One variant: HTTP tests + the 14 scenarios</td></tr>
       <tr><td><code>make test-scenario VARIANT=fastify S=S9</code></td><td>One acceptance scenario against one variant</td></tr>
       <tr><td><code>make check-all</code></td><td>Type check and lint everything</td></tr>
       <tr><td><code>make architecture</code></td><td>Open this page</td></tr>
@@ -89,6 +90,8 @@
       proves: 'The same transport rules expressed with Fastify scopes and hooks (403 before schema 400, scoped raw parser), then all 14 scenarios.' },
     { name: 'Next.js (components, pages, routes, S1–S14)', count: 108, make: 'make nextjs-test', pnpm: 'pnpm test:nextjs', where: ['implementations/nextjs/tests/components/', 'implementations/nextjs/tests/server/', 'implementations/nextjs/tests/http/', 'implementations/nextjs/tests/acceptance/acceptance.test.ts'], needs: 'PostgreSQL (ofl_nextjs_test), Elasticsearch, and a production build (the rendered-page tests run next start on a test port).',
       proves: 'Client components in jsdom, route handlers called with Request objects, Server Component pages over HTTP (status codes, redirects, Cache-Control), then all 14 scenarios.' },
+    { name: 'NestJS (HTTP + lifecycle + S1–S14)', count: 33, make: 'make nestjs-test', pnpm: 'pnpm test:nestjs', where: ['implementations/nestjs/tests/http.test.ts', 'implementations/nestjs/tests/acceptance.test.ts'], needs: 'PostgreSQL (ofl_nestjs_test) and Elasticsearch. Each test instance is a full Nest app on port 0.',
+      proves: 'The Express transport contract through Nest middleware, guards and the exception filter; app.close() order (WebSockets 1001, HTTP, services); the webhook skips CSRF and session; then all 14 scenarios.' },
   ];
   const list = document.getElementById('test-list');
   const detail = document.getElementById('test-detail');
@@ -139,6 +142,7 @@
     ['05-nextjs-boundaries', 'Next.js boundaries'], ['06-checkout-payment-sequence', 'Checkout sequence'],
     ['07-outbox-worker-lifecycle', 'Outbox job lifecycle'], ['08-state-machines', 'State machines'],
     ['09-data-model', 'Data model'], ['10-test-layers', 'Test layers'],
+    ['11-nestjs-request-lifecycle', 'NestJS request lifecycle'],
   ];
   const gallery = document.getElementById('gallery');
   const lightbox = document.getElementById('lightbox');
