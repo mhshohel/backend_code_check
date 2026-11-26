@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order Fulfillment Lab</title>
+<link rel="stylesheet" href="assets/engine.css">
+</head>
+<body>
+<script src="assets/engine.js"></script>
+<main class="hub">
+  <h1 style="margin:6px 0 6px;font-size:26px">One shop, built three times</h1>
+  <p class="lead">An order fulfillment and inventory platform: customers search and buy shoes, warehouse operators ship from two warehouses (WH-EAST, WH-WEST), administrators watch jobs and change prices. The same product is implemented with <b>Express</b>, <b>Fastify</b> and <b>Next.js</b> on top of one shared application layer, one PostgreSQL schema and one GraphQL contract. All three pass the same 14 acceptance scenarios.</p>
+  <p class="lead">Each page below is an animated walkthrough. Choose a scenario, press <b>▶ Play</b> (or <b>Step ▶</b>), and watch the request travel from the user through the framework into the shared core, the database, the worker and back. Click any box to see what it does and where its code lives. The <b>Try it</b> tab gives the real commands for your machine.</p>
+
+  <h2 class="h">Explore a project</h2>
+  <div class="grid-cards">
+    <a class="card pcard" href="express.html"><h3>Express 5</h3><p>An ordered middleware chain. Learn why the webhook is mounted before cookies are parsed and why WebSocket upgrades skip the chain.</p><div class="chips"><span class="chip">:9001 API</span><span class="chip">:9002 web</span><span class="chip">11 scenarios</span></div></a>
+    <a class="card pcard" href="fastify.html"><h3>Fastify 5</h3><p>A plugin tree with lifecycle hooks. Encapsulated scopes decide which hooks a request runs — not registration order.</p><div class="chips"><span class="chip">:9005 API</span><span class="chip">:9006 web</span><span class="chip">11 scenarios</span></div></a>
+    <a class="card pcard" href="nextjs.html"><h3>Next.js 16</h3><p>Server Components read in-process, Server Actions handle forms, guarded route handlers serve GraphQL, a separate process serves WebSockets.</p><div class="chips"><span class="chip">:9008 app</span><span class="chip">:9009 realtime</span><span class="chip">11 scenarios</span></div></a>
+    <a class="card pcard" href="core.html"><h3>Shared core &amp; worker</h3><p>The transactional outbox, crash recovery, retries and backoff, out-of-order search events, the expiry sweeper and operations commands.</p><div class="chips"><span class="chip">server-core</span><span class="chip">domain</span><span class="chip">7 scenarios</span></div></a>
+  </div>
+
+  <h2 class="h">How one request travels</h2>
+  <div class="card detail">
+    <table class="plain">
+      <tr><th style="width:190px">Stage</th><th>What happens</th><th style="width:260px">Where</th></tr>
+      <tr><td>1. Browser</td><td>React SPA (Express, Fastify) or Next.js pages send GraphQL over HTTP with the <code>ofl_session</code> cookie and the <code>x-ofl-csrf: 1</code> header; live order status uses graphql-ws.</td><td><code>packages/web-spa</code>, <code>implementations/nextjs/app</code></td></tr>
+      <tr><td>2. Framework</td><td>Correlation id, security headers, CORS, rate limit, session, CSRF — expressed as middleware (Express), hooks in scopes (Fastify) or guards around route handlers (Next.js).</td><td><code>implementations/*/api</code>, <code>nextjs/modules/server/http</code></td></tr>
+      <tr><td>3. GraphQL</td><td>Thin resolvers: check the viewer, parse input, call one operation, map the result to a typed union.</td><td><code>packages/server-core/src/graphql</code></td></tr>
+      <tr><td>4. Operation</td><td>One transaction: business rows + outbox rows + <code>pg_notify</code>. Pure rules from <code>@ofl/domain</code>. Row locks in a fixed order prevent overselling.</td><td><code>packages/server-core/src/features</code></td></tr>
+      <tr><td>5. Worker</td><td>Claims outbox jobs (<code>SKIP LOCKED</code>, 30 s lease), calls the payment gateway or Elasticsearch with idempotency keys, retries with backoff.</td><td><code>packages/server-core/src/worker</code></td></tr>
+      <tr><td>6. Live update</td><td>PostgreSQL <code>NOTIFY</code> wakes every API process; the subscription re-reads the order and pushes it to the browser.</td><td><code>packages/server-core/src/realtime</code></td></tr>
+    </table>
+  </div>
+
+  <h2 class="h">Where the tests are (click one)</h2>
+  <div class="split">
+    <div class="card" id="test-list" style="padding:6px 0"></div>
+    <div class="card detail" id="test-detail"></div>
+  </div>
+
+  <h2 class="h">The 14 acceptance scenarios</h2>
+  <p class="lead">Defined once in <code>contracts/acceptance-scenarios/scenarios.md</code>, implemented once in <code>packages/test-contracts</code>, run against each variant over real HTTP and WebSocket. Run one with <code>make test-scenario VARIANT=express S=S9</code>.</p>
+  <div class="card detail"><table class="plain" id="scenario-table"><tr><th>#</th><th>Scenario</th><th>Watch it</th></tr></table></div>
+
+  <h2 class="h">Diagrams (draw.io)</h2>
+  <p class="lead">Source files are in <code>architecture/diagrams/*.drawio</code> — open them in draw.io to edit. The <code>.drawio.svg</code> copies below embed the same diagram.</p>
+  <div class="gallery" id="gallery"></div>
+
+  <h2 class="h">Commands</h2>
+  <div class="card detail">
+    <table class="plain">
+      <tr><th style="width:290px">Command</th><th>Effect</th></tr>
+      <tr><td><code>make setup</code></td><td>First run: <code>pnpm install</code>, start Elasticsearch (Docker), create all databases</td></tr>
+      <tr><td><code>make seed-all</code></td><td>Reset and load demo data into the three databases</td></tr>
+      <tr><td><code>make dev-all</code></td><td>Run Express, Fastify and Next.js together; open :9002, :9006, :9008</td></tr>
+      <tr><td><code>make status</code> / <code>make stop</code></td><td>Which of the 9 lab servers are up / stop them</td></tr>
+      <tr><td><code>make test-all</code></td><td>All 380 tests, one package at a time (≈ 6 min)</td></tr>
+      <tr><td><code>make test-domain</code> · <code>test-core</code> · <code>test-spa</code></td><td>One shared package</td></tr>
+      <tr><td><code>make express-test</code> · <code>fastify-test</code> · <code>nextjs-test</code></td><td>One variant: HTTP tests + the 14 scenarios</td></tr>
+      <tr><td><code>make test-scenario VARIANT=fastify S=S9</code></td><td>One acceptance scenario against one variant</td></tr>
+      <tr><td><code>make check-all</code></td><td>Type check and lint everything</td></tr>
+      <tr><td><code>make architecture</code></td><td>Open this page</td></tr>
+    </table>
+  </div>
+  <p class="lead" style="margin-top:18px;font-size:13px">Ids, prices and quantities in the animations (ORD-1042, TR-42, $89.00) are illustrative; the steps, SQL shapes, headers and rules match the code.</p>
+</main>
+<div class="lightbox" id="lightbox"><img alt=""></div>
+<script>
+(function () {
+  OFL.topbar('index.html');
+  const esc = OFL.esc;
+
+  const TESTS = [
+    { name: 'Domain rules (unit)', count: 53, make: 'make test-domain', pnpm: 'pnpm --filter @ofl/domain test', where: ['packages/domain/tests/allocation.test.ts', 'packages/domain/tests/state-machines.test.ts', 'packages/domain/tests/eligibility.test.ts', 'packages/domain/tests/money.test.ts', 'packages/domain/tests/retry-and-validation.test.ts'], needs: 'Nothing (pure functions).',
+      proves: 'Allocation across warehouses, money in integer cents, every allowed and forbidden state transition, cancel/return eligibility, retry classification and backoff, input validation, cursors.' },
+    { name: 'Application layer (integration)', count: 112, make: 'make test-core', pnpm: 'pnpm --filter @ofl/server-core test', where: ['packages/server-core/tests/integration/checkout.test.ts', 'payments.test.ts', 'fulfillment-returns.test.ts', 'worker.test.ts', 'search.test.ts', 'realtime.test.ts', 'graphql.test.ts', 'operations.test.ts', 'db.test.ts'], needs: 'PostgreSQL (database ofl_core_test) and Elasticsearch (prefix ofl_coretest_).',
+      proves: 'Transactions, constraints, real concurrent locking (never mocked), idempotency, outbox and worker recovery, search sync and versioning, realtime across connections, GraphQL batching and limits.' },
+    { name: 'Seed fixtures', count: 5, make: 'make test-packages', pnpm: 'pnpm --filter @ofl/test-fixtures test', where: ['packages/test-fixtures/tests/'], needs: 'PostgreSQL (shares ofl_core_test, so never in parallel with server-core).',
+      proves: 'The demo, contract and bench seed profiles load deterministically and satisfy the inventory invariants.' },
+    { name: 'Acceptance suite helpers', count: 6, make: 'make test-packages', pnpm: 'pnpm --filter @ofl/test-contracts test', where: ['packages/test-contracts/tests/'], needs: 'Nothing.',
+      proves: 'The helpers the 14 scenarios rely on (waitFor, signing, ledger check) behave correctly.' },
+    { name: 'Shared SPA (components)', count: 32, make: 'make test-spa', pnpm: 'pnpm --filter @ofl/web-spa test', where: ['packages/web-spa/tests/'], needs: 'Nothing (jsdom + a urql client double).',
+      proves: 'Search filters, cart, checkout feedback for every result type, failure states, role-dependent controls, and that a late live event cannot overwrite newer order state.' },
+    { name: 'Express (HTTP + S1–S14)', count: 30, make: 'make express-test', pnpm: 'pnpm test:express', where: ['implementations/express/tests/api.test.ts', 'implementations/express/tests/acceptance.test.ts'], needs: 'PostgreSQL (ofl_express_test) and Elasticsearch. The test starts the server itself on port 0.',
+      proves: 'Cookie flags, CSRF, CORS (including the Yoga CORS pitfall), rate and body limits, webhook signature, health, error format, then all 14 acceptance scenarios.' },
+    { name: 'Fastify (HTTP + S1–S14)', count: 34, make: 'make fastify-test', pnpm: 'pnpm test:fastify', where: ['implementations/fastify/tests/http.test.ts', 'implementations/fastify/tests/acceptance.test.ts'], needs: 'PostgreSQL (ofl_fastify_test) and Elasticsearch.',
+      proves: 'The same transport rules expressed with Fastify scopes and hooks (403 before schema 400, scoped raw parser), then all 14 scenarios.' },
+    { name: 'Next.js (components, pages, routes, S1–S14)', count: 108, make: 'make nextjs-test', pnpm: 'pnpm test:nextjs', where: ['implementations/nextjs/tests/components/', 'implementations/nextjs/tests/server/', 'implementations/nextjs/tests/http/', 'implementations/nextjs/tests/acceptance/acceptance.test.ts'], needs: 'PostgreSQL (ofl_nextjs_test), Elasticsearch, and a production build (the rendered-page tests run next start on a test port).',
+      proves: 'Client components in jsdom, route handlers called with Request objects, Server Component pages over HTTP (status codes, redirects, Cache-Control), then all 14 scenarios.' },
+  ];
+  const list = document.getElementById('test-list');
+  const detail = document.getElementById('test-detail');
+  const showTest = (i) => {
+    const t = TESTS[i];
+    list.querySelectorAll('.list-btn').forEach((b, k) => b.classList.toggle('active', k === i));
+    detail.innerHTML = `<h3 style="margin:0 0 6px">${esc(t.name)} <span class="chip">${t.count} tests</span></h3>
+      <p style="margin:0 0 10px;color:var(--ink-2)">${esc(t.proves)}</p>
+      <div class="section-title">Run</div><pre class="code">${esc(t.make)}\n# or\n${esc(t.pnpm)}</pre>
+      <div class="section-title">Needs</div><p style="margin:0;color:var(--ink-2)">${esc(t.needs)}</p>
+      <div class="section-title">Files</div><div class="file">${t.where.map((w) => `<code>${esc(w)}</code>`).join('<br>')}</div>`;
+  };
+  TESTS.forEach((t, i) => {
+    const b = document.createElement('button');
+    b.className = 'list-btn';
+    b.innerHTML = `${esc(t.name)}<small>${t.count} tests · ${esc(t.make)}</small>`;
+    b.addEventListener('click', () => showTest(i));
+    list.appendChild(b);
+  });
+  showTest(0);
+
+  const SCN = [
+    ['S1', '20 concurrent customers, last 5 units: exactly 5 reservations succeed', 'express.html#oversell'],
+    ['S2', 'Concurrent retries with one idempotency key: one order, one reservation', 'fastify.html#idempotency'],
+    ['S3', 'Declined payment releases stock once', 'express.html#declined'],
+    ['S4', 'Duplicate payment notifications have no extra effect', 'fastify.html#webhook'],
+    ['S5', 'Payment confirmation races with expiry without corrupting stock', 'express.html#expiry-race'],
+    ['S6', 'Multi-item checkout fails atomically when one item is short', 'express.html#oversell'],
+    ['S7', 'Worker stops after the payment call, before acknowledgement; retry ends correctly', 'core.html#crash'],
+    ['S8', 'Duplicate or reordered search events leave no stale data', 'core.html#versioning'],
+    ['S9', 'One order ships from two warehouses', 'fastify.html#ship'],
+    ['S10', 'Partial return restocks the right quantity once', 'nextjs.html#return'],
+    ['S11', 'A customer cannot read or change another customer\'s order', 'nextjs.html#return'],
+    ['S12', 'Database query count stays constant as the order list grows', null],
+    ['S13', 'Elasticsearch failure does not affect checkout', 'core.html#retry'],
+    ['S14', 'Live order updates across API processes, with reconnect', 'nextjs.html#checkout'],
+  ];
+  const table = document.getElementById('scenario-table');
+  for (const [id, text, href] of SCN) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><b>${id}</b></td><td>${esc(text)}</td><td>${href ? `<a href="${href}">▶ ${href.replace('.html#', ' · ')}</a>` : '<span class="empty">DataLoader batching: see graphql.test.ts</span>'}</td>`;
+    table.appendChild(tr);
+  }
+
+  const DIAGRAMS = [
+    ['01-system-context', 'System context'], ['02-monorepo-packages', 'Packages and dependencies'],
+    ['03-express-request-pipeline', 'Express pipeline'], ['04-fastify-plugin-tree', 'Fastify plugin tree'],
+    ['05-nextjs-boundaries', 'Next.js boundaries'], ['06-checkout-payment-sequence', 'Checkout sequence'],
+    ['07-outbox-worker-lifecycle', 'Outbox job lifecycle'], ['08-state-machines', 'State machines'],
+    ['09-data-model', 'Data model'], ['10-test-layers', 'Test layers'],
+  ];
+  const gallery = document.getElementById('gallery');
+  const lightbox = document.getElementById('lightbox');
+  for (const [file, title] of DIAGRAMS) {
+    const src = `../diagrams/${file}.drawio.svg`;
+    const card = document.createElement('div');
+    card.className = 'card thumb';
+    card.innerHTML = `<img src="${src}" alt="${esc(title)}" loading="lazy"><div>${esc(title)}</div>`;
+    card.addEventListener('click', () => { lightbox.querySelector('img').src = src; lightbox.classList.add('open'); });
+    gallery.appendChild(card);
+  }
+  lightbox.addEventListener('click', () => lightbox.classList.remove('open'));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') lightbox.classList.remove('open'); });
+})();
+</script>
+</body>
+</html>

@@ -16,7 +16,8 @@ PORTS := 9001 9002 9004 9005 9006 9007 9008 9009 9010
 	express-seed express-dev express-build express-start express-test express-check express-open \
 	fastify-seed fastify-dev fastify-build fastify-start fastify-test fastify-check fastify-open \
 	nextjs-seed nextjs-dev nextjs-build nextjs-start nextjs-test nextjs-check nextjs-open \
-	seed-all dev-all build-all start-all test-all test-packages check-all status stop bench
+	seed-all dev-all build-all start-all test-all test-packages check-all status stop bench \
+	test-domain test-core test-spa test-scenario architecture diagrams
 
 help: ## List all targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -140,6 +141,22 @@ test-packages: ## Shared package tests only (domain, server-core, fixtures, SPA,
 	pnpm --filter @ofl/web-spa test
 	pnpm --filter @ofl/test-contracts test
 
+test-domain: ## Unit tests for pure business rules (no database needed)
+	pnpm --filter @ofl/domain test
+
+test-core: ## Integration tests of the shared application layer (PostgreSQL + Elasticsearch)
+	pnpm --filter @ofl/server-core test
+
+test-spa: ## Component tests of the shared React SPA
+	pnpm --filter @ofl/web-spa test
+
+# One acceptance scenario against one variant, e.g. make test-scenario VARIANT=fastify S=S9
+# The trailing space in the pattern keeps S1 from also matching S10-S14.
+VARIANT ?= express
+S ?= S1
+test-scenario: ## One acceptance scenario: make test-scenario VARIANT=fastify S=S9
+	cd implementations/$(VARIANT) && pnpm test -t "$(S) "
+
 check-all: ## Type check and lint everything
 	pnpm typecheck && pnpm typecheck:scripts && pnpm lint && pnpm lint:scripts
 
@@ -158,6 +175,15 @@ status: ## Show which lab servers are running and healthy
 stop: ## Stop every lab server listening on the lab ports
 	@pids=$$(for p in $(PORTS); do lsof -ti tcp:$$p -sTCP:LISTEN 2>/dev/null; done | sort -u | tr "\n" " "); \
 	if [ -z "$$pids" ]; then echo "No lab servers running."; else echo "Stopping: $$pids"; kill $$pids; fi
+
+architecture: ## Open the interactive architecture explorer (architecture/interactive/index.html)
+	open architecture/interactive/index.html
+
+DRAWIO ?= /Applications/draw.io.app/Contents/MacOS/draw.io
+diagrams: ## Re-export architecture/diagrams/*.drawio to .drawio.svg (needs the draw.io desktop app)
+	@for f in architecture/diagrams/*.drawio; do \
+	  "$(DRAWIO)" -x -f svg -e -b 10 -o "$${f%.drawio}.drawio.svg" "$$f" >/dev/null 2>&1 && echo "  $${f%.drawio}.drawio.svg"; \
+	done
 
 bench: ## Run the benchmark suite on ofl_bench (load the bench profile first; see README)
 	pnpm bench

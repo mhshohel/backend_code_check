@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Next.js Variant Explorer</title>
+<link rel="stylesheet" href="assets/engine.css">
+</head>
+<body>
+<script src="assets/engine.js"></script>
+<script src="assets/scenarios.js"></script>
+<script>
+(function () {
+  const X = 215, W = 340;
+  const variant = [
+    { id: 'browser', label: 'Browser', sub: 'streamed HTML from RSC\n+ client components\n(urql for mutations)', x: 20, y: 230, w: 160, h: 120, type: 'ui',
+      info: { does: '<p>Public pages arrive as server-rendered, streamed HTML. Interactive parts (cart, checkout, warehouse actions, live order status) are client components that send GraphQL to <code>/api/graphql</code> and subscribe over WebSocket to the realtime process.</p><p>After a client mutation the component calls <code>router.refresh()</code> so Server Components re-render with fresh data.</p>', file: ['implementations/nextjs/app/', 'implementations/nextjs/modules/'], tests: 'implementations/nextjs/tests/components/' } },
+    { id: 'layouts', label: 'Segment layouts', sub: 'orders/ · warehouse/ · admin/', x: X, y: 44, w: W, h: 44, type: 'server',
+      info: { does: '<p>Access checks for whole sections live in <code>layout.tsx</code> files: <code>redirect("/login")</code> when signed out, <code>forbidden()</code> for the wrong role, <code>notFound()</code> for someone else\'s order.</p><p>Gotcha the tests found: a root <code>loading.tsx</code> starts a streamed 200 response before the layout can redirect or return 403. Loading files therefore live in route groups like <code>orders/(list)/</code>, below the access check.</p>', file: ['implementations/nextjs/app/orders/layout.tsx', 'implementations/nextjs/app/warehouse/layout.tsx', 'implementations/nextjs/app/admin/layout.tsx'], tests: 'implementations/nextjs/tests/http/' } },
+    { id: 'rsc', label: 'Server Components (pages)', sub: 'executeOperation() in-process', x: X, y: 96, w: W, h: 48, type: 'server',
+      at: { page: '<p>The catalog page (<code>app/(catalog)/page.tsx</code>) is an async Server Component. It reads <code>searchParams</code> and runs the <code>SearchProducts</code> operation against the shared schema <b>in the same process</b> through <code>executeOperation</code>: no HTTP request to itself, no serialization round-trip.</p>' },
+      info: { does: '<p>Pages that render on the server.</p>', file: ['implementations/nextjs/app/(catalog)/page.tsx', 'implementations/nextjs/modules/server/data/run-operation.ts'] } },
+    { id: 'cache', label: 'unstable_cache', sub: 'anon search 15 s · categories 300 s', x: X, y: 152, w: W, h: 44, type: 'server',
+      at: { page: '<p>Anonymous search results are cached for 15 s, with the Elasticsearch index prefix in the cache key. On a hit the request ends here. On a miss it continues to the schema. Anything that reads the session is dynamic and sent with <code>Cache-Control: private, no-store</code>.</p>' },
+      info: { does: '<p>Caching is a decision per data source, not a global switch. The admin price action calls <code>revalidateTag</code> to drop stale catalog entries.</p>' } },
+    { id: 'actions', label: 'Server Actions', sub: 'login · logout · price change', x: X, y: 204, w: W, h: 46, type: 'server',
+      at: { action: '<p>A Server Action is a POST to the page with a <code>Next-Action</code> header. Next.js compares the <code>Origin</code> with the host before running it, which is the CSRF defence here (the JSON route handlers use the <code>x-ofl-csrf</code> header instead). The action can set cookies with <code>cookies()</code> and invalidate caches with <code>revalidateTag</code>.</p>' },
+      info: { does: '<p>Form submissions handled on the server.</p>', file: ['implementations/nextjs/modules/auth/actions.ts', 'implementations/nextjs/modules/admin/actions.ts'] } },
+    { id: 'guards', label: 'withGuards()', sub: 'origin · CSRF · rate + body limit', x: X, y: 258, w: W, h: 46, type: 'ui',
+      at: { default: '<p>Route handlers have no middleware chain, so each one is wrapped: <code>withGuards(() => handler)</code>. The helpers reject a foreign <code>Origin</code>, require <code>x-ofl-csrf: 1</code>, apply the rate limit and read the body with a 100 KB cap.</p><p>Route handlers see headers, not sockets: the rate-limit key uses <code>X-Forwarded-For</code> only when <code>TRUST_PROXY</code> says a trusted proxy sets it.</p>',
+        webhook: '<p>Same wrapper, but the webhook handler does not require the CSRF header: it is authenticated by its signature. The webhook rate limit and body limit still apply.</p>' },
+      info: { does: '<p>The Next.js substitute for middleware.</p>', file: 'implementations/nextjs/modules/server/http/guards.ts' } },
+    { id: 'rh-graphql', label: 'api/graphql', sub: 'POST only · Yoga fetch', x: X, y: 312, w: 165, h: 56, type: 'server',
+      at: { graphql: '<p>Exports only <code>POST</code> (a GET query would bypass the CSRF rule; Next answers 405) and <code>OPTIONS</code> (refuses every preflight: same-origin requests never preflight). Yoga\'s fetch API takes a <code>Request</code> and returns a <code>Response</code>.</p><p>Bundling gotcha: route handlers and Server Components are separate bundles with separate copies of workspace code, so <code>instanceof AppError</code> failed. AppError now carries a global symbol brand.</p>' },
+      info: { does: '<p>GraphQL for client components.</p>', file: ['implementations/nextjs/app/api/graphql/route.ts', 'implementations/nextjs/modules/server/graphql-handler.ts'] } },
+    { id: 'rh-auth', label: 'api/auth/*', sub: 'JSON login · logout', x: X + 175, y: 312, w: 165, h: 56, type: 'server',
+      at: { auth: '<p>JSON login with the same HTTP contract as Express and Fastify, so the acceptance suite can sign in to every variant the same way. The UI itself uses the Server Action.</p>' },
+      info: { does: '<p>Login and logout route handlers.</p>', file: 'implementations/nextjs/app/api/auth/' } },
+    { id: 'rh-webhook', label: 'api/webhooks', sub: 'raw body → HMAC', x: X, y: 376, w: 165, h: 56, type: 'ext',
+      at: { webhook: '<p><code>await request.text()</code> (inside the body-limit reader) yields the raw body; it is never parsed and re-serialized before <code>handlePaymentWebhook</code> verifies the signature.</p>' },
+      info: { does: '<p>The signed provider callback.</p>', file: ['implementations/nextjs/app/api/webhooks/payments/route.ts', 'implementations/nextjs/modules/server/webhook-handler.ts'] } },
+    { id: 'rh-health', label: 'api/health', sub: 'live · ready · metrics', x: X + 175, y: 376, w: 165, h: 56, type: 'server',
+      info: { does: '<p>Probes and metrics as route handlers. <code>make status</code> calls <code>/api/health/live</code> on 9008.</p>', file: 'implementations/nextjs/app/api/health/' } },
+    { id: 'ws', label: 'graphql-ws server', sub: 'own Node process · port 9009', x: X, y: 552, w: W, h: 44, type: 'worker',
+      at: { ws: '<p>Next.js route handlers cannot upgrade a connection to WebSocket, so subscriptions run in a separate small Node process. Cookies are scoped to the host, not the port, so the browser sends <code>ofl_session</code> to :9009 as well. The server checks the Origin and resolves the session before accepting the subscription.</p>' },
+      info: { does: '<p>The realtime service. It needs its own process, its own shutdown handling and its own health port.</p>', file: 'implementations/nextjs/modules/realtime/server.ts' } },
+  ];
+  const nodes = [...OFL.sharedNodes({ hub: { x: X, y: 604, w: W, h: 54 }, hubLabel: 'RealtimeHub (LISTEN)' }), ...variant];
+  const P = {
+    id: 'nextjs', name: 'Next.js', api: 'http://localhost:9008', web: 'http://localhost:9008', wsUrl: 'ws://localhost:9009/graphql',
+    esPrefix: 'ofl_nextjs_', db: 'ofl_nextjs',
+    paths: { graphql: '/api/graphql', login: '/api/auth/login', webhook: '/api/webhooks/payments' },
+    route: {
+      graphql: ['guards', 'rh-graphql'],
+      auth: ['guards', 'rh-auth'],
+      webhook: ['guards', 'rh-webhook'],
+      page: ['rsc', 'cache'],
+      action: ['actions'],
+      ws: ['ws'],
+    },
+    uiLogin: 'action', uiSearch: 'page', uiPrice: 'action',
+    webhookSummary: 'In Next.js the webhook is a route handler: withGuards applies the rate and body limits, request.text() gives the raw bytes, and the shared handler verifies the signature.',
+    nodeMap: null,
+  };
+  P.nodeMap = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  OFL.mount({
+    page: 'nextjs.html',
+    title: 'Next.js 16 variant (App Router)',
+    intro: 'No request pipeline to order. Each concern sits at a boundary the framework defines: Server Components read data in-process, Server Actions handle forms, route handlers (wrapped by <code>withGuards</code>) serve client GraphQL and the webhook, layouts enforce access, and a separate process serves WebSockets. Press Play to see which boundary each request crosses.',
+    chips: ['App :9008', 'Realtime :9009', 'Worker health :9010', 'DB ofl_nextjs', 'make nextjs-dev', 'make nextjs-test → 108 tests'],
+    viewBox: [1120, 680], defaultUrl: P.web,
+    groups: [
+      { label: 'NEXT START :9008', x: 200, y: 14, w: 370, h: 430 },
+      { label: 'REALTIME PROCESS :9009', x: 200, y: 520, w: 370, h: 146 },
+      { label: '@OFL/SERVER-CORE (bundled into next)', x: 590, y: 14, w: 220, h: 310 },
+    ],
+    nodes,
+    links: [...OFL.sharedLinks, ['browser', 'rsc'], ['browser', 'guards'], ['browser', 'actions'], ['browser', 'ws'], ['rsc', 'cache'], ['guards', 'rh-graphql'], ['guards', 'rh-webhook'], ['provider', 'guards'], ['ws', 'hub'], ['cache', 'core-gql'], ['rh-graphql', 'core-gql']],
+    scenarios: OFL.buildScenarios(P),
+  });
+})();
+</script>
+</body>
+</html>

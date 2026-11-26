@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fastify Variant Explorer</title>
+<link rel="stylesheet" href="assets/engine.css">
+</head>
+<body>
+<script src="assets/engine.js"></script>
+<script src="assets/scenarios.js"></script>
+<script>
+(function () {
+  const X = 220, W = 330;
+  const variant = [
+    { id: 'browser', label: 'React SPA', sub: 'Vite dev :9006 → proxy :9005\nReact Router · Redux · urql', x: 20, y: 230, w: 160, h: 120, type: 'ui',
+      info: { does: '<p>The same shared SPA as the Express variant (<code>packages/web-spa</code>), mounted by <code>implementations/fastify/web</code> with Fastify\'s ports. The browser cannot tell which server framework answers: same GraphQL contract, same cookies, same WebSocket protocol.</p>', file: ['packages/web-spa/src/', 'implementations/fastify/web/'], tests: 'packages/web-spa/tests/' } },
+    { id: 'ctx', label: 'request-context plugin', sub: 'genReqId ← x-correlation-id', x: X, y: 44, w: W, h: 44, type: 'server',
+      at: { default: '<p>Fastify creates the request id itself: <code>genReqId</code> takes a valid incoming <code>x-correlation-id</code> or generates one. pino logging is built in, so <code>request.log</code> already carries the id. Cookie, signature and email fields are redacted from logs.</p>' },
+      info: { does: '<p>Root-scope plugin (wrapped with fastify-plugin so its decorators are visible everywhere).</p>', file: ['implementations/fastify/api/plugins/request-context.ts', 'implementations/fastify/api/build-server.ts'] } },
+    { id: 'sec', label: 'security plugin', sub: 'helmet · CORS · rate-limit', x: X, y: 96, w: W, h: 44, type: 'server',
+      at: { default: '<p>Root-scope hooks: helmet headers, CORS limited to the web origin, rate limiting. Each route then sets its own limit (login 10/min, GraphQL 300/min, webhook 120/min) through route config.</p>' },
+      info: { does: '<p>Security plugin in the root scope.</p>', file: 'implementations/fastify/api/plugins/security.ts' } },
+    { id: 'metrics', label: 'metrics + @fastify/websocket', sub: 'onResponse timing · ws support', x: X, y: 148, w: W, h: 44, type: 'server',
+      at: { default: '<p>An <code>onResponse</code> hook records the request duration by route. <code>@fastify/websocket</code> is registered here so any route can declare a <code>wsHandler</code>.</p>' },
+      info: { does: '<p>Metrics and WebSocket support in the root scope.</p>', file: 'implementations/fastify/api/plugins/metrics.ts' } },
+    { id: 'health', label: 'health routes', sub: 'root scope: no session hook', x: X, y: 200, w: W, h: 44, type: 'server',
+      info: { does: '<p>Registered in the root scope, outside the browser API scope, so probes never run the session hook or the CSRF check — not because of ordering, but because the hooks are not visible here.</p>', file: 'implementations/fastify/api/routes/health.ts' } },
+    { id: 'session', label: 'onRequest: session hook', sub: 'browser API scope only', x: X, y: 290, w: W, h: 44, type: 'ui',
+      at: { default: '<p>Added by <code>addBrowserApiHooks()</code> inside the browser API scope, deliberately <b>not</b> wrapped with fastify-plugin. The hook therefore runs only for routes in this scope (/auth, /graphql). It sets <code>request.viewer = await resolveSession(services, cookie)</code>.</p>',
+        ws: '<p>The WebSocket upgrade is a GET on a real route, so it passes through this onRequest hook too: <code>request.viewer</code> is already set when the socket opens.</p>' },
+      info: { does: '<p>Encapsulation replaces ordering: static files and the webhook never pay for a session lookup.</p>', file: 'implementations/fastify/api/plugins/api-scope.ts' } },
+    { id: 'csrf', label: 'preValidation: CSRF check', sub: 'POST without x-ofl-csrf → 403', x: X, y: 342, w: W, h: 44, type: 'ui',
+      at: { default: '<p>Runs in the <code>preValidation</code> phase, not <code>preHandler</code>, so a request missing the header is rejected with 403 <i>before</i> JSON-schema validation could answer 400. Lifecycle order: onRequest → preParsing → preValidation → (validation) → preHandler → handler.</p>' },
+      info: { does: '<p>CSRF rule for state-changing requests in the browser API scope.</p>', file: 'implementations/fastify/api/plugins/api-scope.ts' } },
+    { id: 'auth', label: '/auth', sub: 'login · logout', x: X, y: 394, w: 110, h: 56, type: 'server',
+      at: { auth: '<p>Route with its own rate-limit config (10/min). Calls <code>login(services, request.body, meta)</code> and sets the cookie with <code>reply.setCookie(SESSION_COOKIE_NAME, token, sessionCookieOptions(config))</code>.</p>' },
+      info: { does: '<p>Login and logout routes.</p>', file: 'implementations/fastify/api/routes/auth.ts' } },
+    { id: 'graphql', label: '/graphql route', sub: 'POST → Yoga', x: X + 120, y: 394, w: W - 120, h: 56, type: 'server',
+      at: { graphql: '<p>POST is handed to Yoga with <code>yoga.handleNodeRequestAndResponse(request, reply, ctx)</code>; the returned Response\'s status, headers and body are copied to <code>reply</code>. Same schema and context factory as the other variants.</p>' },
+      info: { does: '<p>GraphQL over HTTP and WebSocket on one path.</p>', file: 'implementations/fastify/api/routes/graphql.ts' } },
+    { id: 'ws', label: 'wsHandler on GET /graphql', sub: 'one path, two protocols', x: X, y: 458, w: W, h: 44, type: 'server',
+      at: { ws: '<p>The same route declares a <code>wsHandler</code>: a GET with <code>Upgrade: websocket</code> goes to graphql-ws, a normal GET goes to Yoga. The Origin is checked against the allowlist and the viewer from the session hook is used for authorization. <code>fastify.close()</code> later runs an <code>onClose</code> hook that disposes the graphql-ws server.</p>' },
+      info: { does: '<p>graphql-ws via @fastify/websocket.</p>', file: 'implementations/fastify/api/routes/graphql.ts' } },
+    { id: 'parser', label: 'raw-body content-type parser', sub: '/webhooks scope only', x: X, y: 556, w: W, h: 42, type: 'ext',
+      at: { webhook: '<p>This scope replaces the JSON parser with one that keeps the body as the raw string, because the HMAC covers the exact bytes. Every other scope keeps the default JSON parser — another use of encapsulation.</p>' },
+      info: { does: '<p>Scoped content-type parser.</p>', file: 'implementations/fastify/api/routes/webhook.ts' } },
+    { id: 'webhook', label: 'POST /webhooks/payments', sub: 'JSON Schema · 120/min', x: X, y: 606, w: W, h: 46, type: 'ext',
+      at: { webhook: '<p>The route declares a JSON Schema for the body, so Fastify rejects a malformed request before the handler runs. The handler passes the raw string and the <code>x-ofl-signature</code> header to <code>handlePaymentWebhook</code>. No session hook and no CSRF hook exist in this scope.</p>' },
+      info: { does: '<p>The signed provider callback.</p>', file: 'implementations/fastify/api/routes/webhook.ts' } },
+  ];
+  const nodes = [...OFL.sharedNodes(), ...variant];
+  const P = {
+    id: 'fastify', name: 'Fastify', api: 'http://localhost:9005', web: 'http://localhost:9006', wsUrl: 'ws://localhost:9005/graphql',
+    esPrefix: 'ofl_fastify_', db: 'ofl_fastify',
+    paths: { graphql: '/graphql', login: '/auth/login', webhook: '/webhooks/payments' },
+    route: {
+      graphql: ['ctx', 'sec', 'metrics', 'session', 'csrf', 'graphql'],
+      auth: ['ctx', 'sec', 'metrics', 'session', 'csrf', 'auth'],
+      webhook: ['ctx', 'sec', 'metrics', 'parser', 'webhook'],
+      ws: ['ctx', 'session', 'ws'],
+    },
+    uiLogin: 'auth', uiSearch: 'graphql', uiPrice: 'graphql',
+    webhookSummary: 'In Fastify the webhook lives in its own encapsulated scope with a raw-body parser and a JSON Schema; the session and CSRF hooks of the browser scope simply do not exist there.',
+    nodeMap: Object.fromEntries(nodes.map((n) => [n.id, n])),
+  };
+  OFL.mount({
+    page: 'fastify.html',
+    title: 'Fastify 5 variant',
+    intro: 'A tree of plugins with lifecycle hooks. Instead of relying on registration order, Fastify <b>encapsulates</b>: hooks registered inside a scope apply only to routes in that scope. The session hook and CSRF check live in the browser API scope; the webhook scope has its own body parser. Press Play to watch which hooks a request actually runs.',
+    chips: ['API :9005', 'Web (Vite) :9006', 'Worker health :9007', 'DB ofl_fastify', 'make fastify-dev', 'make fastify-test → 34 tests'],
+    viewBox: [1120, 680], defaultUrl: P.web,
+    groups: [
+      { label: 'FASTIFY PROCESS :9005 — ROOT SCOPE', x: 200, y: 14, w: 370, h: 652 },
+      { label: 'BROWSER API SCOPE', x: 208, y: 262, w: 354, h: 248 },
+      { label: '/WEBHOOKS SCOPE', x: 208, y: 528, w: 354, h: 132 },
+      { label: '@OFL/SERVER-CORE (same process)', x: 590, y: 14, w: 220, h: 420 },
+    ],
+    nodes,
+    links: [...OFL.sharedLinks, ['browser', 'ctx'], ['ctx', 'sec'], ['sec', 'metrics'], ['metrics', 'health'], ['session', 'csrf'], ['csrf', 'auth'], ['csrf', 'graphql'], ['parser', 'webhook'], ['provider', 'parser'], ['graphql', 'core-gql'], ['webhook', 'core-ops'], ['ws', 'hub']],
+    scenarios: OFL.buildScenarios(P),
+  });
+})();
+</script>
+</body>
+</html>

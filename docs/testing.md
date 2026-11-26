@@ -105,7 +105,7 @@ The Next.js variant therefore tests:
 | Everything, one package at a time | `pnpm test` |
 | One variant | `pnpm test:express`, `pnpm test:fastify`, `pnpm test:nextjs` |
 | Shared packages | `pnpm --filter @ofl/domain test`, `pnpm --filter @ofl/server-core test` |
-| One acceptance scenario | `cd implementations/fastify && pnpm test -- -t "S9"` |
+| One acceptance scenario | `cd implementations/fastify && pnpm test -t "S9 "` (or `make test-scenario VARIANT=fastify S=S9`) |
 | Type check / lint everything | `pnpm typecheck && pnpm typecheck:scripts`, `pnpm lint && pnpm lint:scripts` |
 
 Results of the final run are in the root [README](../README.md#tests).

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shared Core Explorer</title>
+<link rel="stylesheet" href="assets/engine.css">
+</head>
+<body>
+<script src="assets/engine.js"></script>
+<script>
+(function () {
+  const pre = (c) => `<pre class="code">${OFL.esc(c)}</pre>`;
+  const nodes = [
+    { id: 'admin', label: 'Admin dashboard', sub: 'failed jobs · retry · audit', x: 20, y: 36, w: 180, h: 60, type: 'actor',
+      info: { does: '<p>The administrator sees orders by status, revenue, low stock, the job backlog and FAILED jobs with a <b>Retry</b> button (<code>retryJob</code> mutation), plus the audit log.</p>', file: ['packages/web-spa/src/features/admin/', 'implementations/nextjs/app/admin/'] } },
+    { id: 'cli', label: 'ofl CLI', sub: 'migrate · reindex · jobs\nretry-jobs · reconcile', x: 20, y: 120, w: 180, h: 70, type: 'actor',
+      info: { does: '<p>Operations commands, run inside a variant folder so they read that variant\'s <code>.env</code>: <code>pnpm exec ofl migrate | reset | seed | reindex | jobs | retry-jobs --all-failed | reconcile</code>.</p>', file: 'packages/server-core/src/cli.ts' } },
+    { id: 'api', label: 'API process', sub: 'Express · Fastify · Next.js\nresolver → one operation', x: 20, y: 290, w: 180, h: 80, type: 'server',
+      info: { does: '<p>Any of the three variants. Framework code ends at the resolver; everything on this page is shared code in <code>@ofl/server-core</code> and <code>@ofl/domain</code>.</p>' } },
+    { id: 'ops', label: 'Feature operation', sub: 'one transaction per workflow', x: 240, y: 290, w: 210, h: 70, type: 'core',
+      info: { does: '<p>checkout, cancelOrder, shipOrder, requestReturn, receiveReturn, adjustInventory, updateSkuPrice, retryJob. Each writes its business rows, its outbox rows and <code>pg_notify</code> in one transaction, and retries the whole transaction on deadlock / serialization failure (SQLSTATE 40P01 / 40001) up to 3 times with jitter.</p>', file: 'packages/server-core/src/features/' } },
+    { id: 'domain', label: '@ofl/domain', sub: 'classifyError · backoff', x: 240, y: 400, w: 210, h: 60, type: 'core',
+      info: { does: '<p>Pure rules used by the worker: <code>classifyError</code> decides RETRYABLE vs PERMANENT; the backoff function gives 500 ms × 2^attempt with jitter, capped at 60 s; max 8 attempts.</p>', file: 'packages/domain/src/retry.ts', tests: 'packages/domain/tests/retry-and-validation.test.ts' } },
+    { id: 'hub', label: 'RealtimeHub', sub: 'LISTEN order_events', x: 240, y: 520, w: 210, h: 60, type: 'core',
+      info: { does: '<p>Receives NOTIFY hints after commit and re-reads orders for subscribers.</p>', file: 'packages/server-core/src/realtime/' } },
+    { id: 'pg', label: 'PostgreSQL', sub: 'orders · balances · movements\npayments · payment_events', x: 490, y: 36, w: 250, h: 120, type: 'db',
+      info: { does: '<p>The source of truth for business state. Uniqueness constraints are the last line of idempotency: <code>payment_events.provider_event_id</code>, <code>shipments (order_id, warehouse_id)</code>, movement references.</p>', file: 'infrastructure/postgres/migrations/' } },
+    { id: 'outbox', label: 'outbox_events', sub: 'the job queue, same database\nstatus · available_at · lease_expires_at', x: 490, y: 200, w: 250, h: 110, type: 'db',
+      info: { does: '<p>One table is both the transactional outbox and the job queue (ADR 0002). Columns: <code>topic, aggregate_type, aggregate_id, payload, status (PENDING | PROCESSING | DONE | FAILED), attempts, max_attempts (8), available_at, locked_by, lease_expires_at, last_error, correlation_id</code>.</p><p>No broker to run, and the job exists if and only if the business change committed.</p>', file: ['packages/server-core/src/outbox/outbox.ts', 'docs/decisions/0002-outbox-as-job-queue.md'] } },
+    { id: 'es', label: 'Elasticsearch', sub: 'alias ofl_*_products', x: 490, y: 520, w: 250, h: 80, type: 'db',
+      info: { does: '<p>Index alias <code>&lt;prefix&gt;products</code> → concrete index <code>&lt;prefix&gt;products_&lt;timestamp&gt;</code>. Documents carry an external version so stale writes lose.</p>', file: 'packages/server-core/src/search/', tests: 'packages/server-core/tests/integration/search.test.ts' } },
+    { id: 'loop', label: 'Worker A · claim loop', sub: 'concurrency 4 · polls outbox', x: 800, y: 50, w: 290, h: 60, type: 'worker',
+      info: { does: '<p><code>startWorker(services, { workerId, concurrency })</code>. Each slot claims one due job with <code>FOR UPDATE SKIP LOCKED</code>, sets a 30 s lease, runs the handler, then marks DONE or schedules a retry. <code>stop()</code> finishes in-flight jobs first (graceful shutdown).</p>', file: 'packages/server-core/src/worker/worker.ts', tests: 'packages/server-core/tests/integration/worker.test.ts' } },
+    { id: 'handlers', label: 'Topic handlers', sub: 'idempotent: at-least-once safe', x: 800, y: 140, w: 290, h: 60, type: 'worker',
+      info: { does: '<p><code>payment.authorize</code>, <code>reservation.expire</code>, <code>refund.process</code>, <code>search.product_changed</code>, <code>order.changed</code> (no-op). Each one is safe to run twice: external calls use idempotency keys, database effects are guarded by status checks under lock and unique constraints.</p>', file: 'packages/server-core/src/worker/handlers.ts' } },
+    { id: 'sweeper', label: 'Expiry sweeper', sub: 'safety net for lost expiry jobs', x: 800, y: 230, w: 290, h: 56, type: 'worker',
+      info: { does: '<p>Periodically finds ACTIVE reservations past <code>expires_at</code> and enqueues <code>reservation.expire</code> for them, in case a job was lost or delayed.</p>', file: 'packages/server-core/src/worker/sweeper.ts' } },
+    { id: 'workerB', label: 'Worker B', sub: 'another process (or A after restart)', x: 800, y: 320, w: 290, h: 60, type: 'worker',
+      info: { does: '<p>Any number of workers can run. SKIP LOCKED means they never block each other and never get the same job at the same time; leases mean a crashed worker\'s job comes back.</p>' } },
+    { id: 'gateway', label: 'Simulated gateway', sub: 'idempotency key = payment / refund id', x: 800, y: 520, w: 290, h: 64, type: 'ext',
+      info: { does: '<p>Returns the same provider event for the same key. That is what makes "call, crash, call again" safe.</p>' } },
+  ];
+
+  const scenarios = [
+    {
+      id: 'outbox', title: 'Why a transactional outbox?', role: 'Concept', tests: ['worker.test.ts', 'ADR 0002'],
+      summary: 'Writing to the database and calling a payment API cannot be atomic. The outbox makes the call a row in the same transaction, and a worker performs it later — at least once, idempotently.',
+      init: { kv: { 'Business rows': 'none' } },
+      steps: [
+        { kind: 'internal', from: 'api', to: 'ops', label: 'checkout(input)', title: 'A business operation starts',
+          body: '<p>The naive approach: "commit the order, then call the payment API". If the process dies between the two, the order waits forever. "Call the API, then commit" can charge a card for an order that rolls back. That is the <b>dual-write problem</b>.</p>' },
+        { kind: 'internal', from: 'ops', to: 'domain', label: 'pure rules', title: 'Decide with pure functions', body: '<p>Allocation, validation and state transitions are computed without I/O.</p>' },
+        { kind: 'sql', from: 'ops', to: 'pg', label: 'business rows', title: 'Write the business change', code: "BEGIN;\nINSERT INTO orders …; INSERT INTO reservations …; UPDATE inventory_balances …;", set: { kv: { 'Business rows': 'uncommitted' } } },
+        { kind: 'sql', from: 'ops', to: 'outbox', label: 'INSERT outbox row', title: 'Write the side effect as data, same transaction',
+          body: '<p>The payment call is now just a row. Commit makes both visible together; rollback removes both. There is no state where one exists without the other.</p>',
+          code: "INSERT INTO outbox_events (topic, payload, available_at, correlation_id)\nVALUES ('payment.authorize', '{\"paymentId\":\"pay_51\"}', now(), 'c0ffee…');\nCOMMIT;", set: { kv: { 'Business rows': 'committed' }, jobs: { 'payment.authorize': 'PENDING' } } },
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'claim (SKIP LOCKED)', title: 'A worker claims it',
+          code: "WITH next AS (SELECT id FROM outbox_events\n  WHERE (status = 'PENDING' AND available_at <= now())\n     OR (status = 'PROCESSING' AND lease_expires_at < now() AND attempts < max_attempts)\n  ORDER BY available_at, id LIMIT 4 FOR UPDATE SKIP LOCKED)\nUPDATE outbox_events o SET status = 'PROCESSING', attempts = o.attempts + 1,\n  locked_by = 'worker-A', lease_expires_at = now() + '30 s'\nFROM next WHERE o.id = next.id RETURNING *;", set: { jobs: { 'payment.authorize': 'PROCESSING' } } },
+        { kind: 'internal', from: 'loop', to: 'handlers', label: 'dispatch by topic', title: 'Run the handler' },
+        { kind: 'http', from: 'handlers', to: 'gateway', label: 'charge(key = pay_51)', title: 'External call, with an idempotency key' },
+        { kind: 'http', back: true, from: 'gateway', to: 'handlers', label: 'provider event', title: 'Gateway answers' },
+        { kind: 'sql', from: 'handlers', to: 'pg', label: 'record once', title: 'Apply the result idempotently', code: 'INSERT INTO payment_events … ON CONFLICT (provider_event_id) DO NOTHING; …' },
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'mark DONE', title: 'Acknowledge', body: '<p>Delivery is <b>at least once</b>, never "exactly once": the handler may run again if the worker dies before this line. That is why every handler is idempotent.</p>', set: { jobs: { 'payment.authorize': 'DONE' } } },
+      ],
+      try: `<p>Inspect the queue of the Express database while you click around:</p>${pre("psql ofl_express -c \"select id, topic, status, attempts, available_at, lease_expires_at, last_error from outbox_events order by id desc limit 10\"")}`,
+    },
+    {
+      id: 'crash', title: 'Worker crashes after charging (S7)', role: 'System', tests: ['S7', 'worker.test.ts'],
+      summary: 'Worker A charges the card and records the payment, then dies before marking the job done. The lease expires, Worker B retries, the gateway returns the same event, and the duplicate is ignored.',
+      init: { order: 'PENDING_PAYMENT', payment: 'PENDING', jobs: { 'payment.authorize': 'PENDING' }, kv: { Attempts: '0', 'Card charged': '0 ×' } },
+      steps: [
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'A claims, lease 30 s', title: 'Worker A claims the job', set: { jobs: { 'payment.authorize': 'PROCESSING (A)' }, kv: { Attempts: '1' } } },
+        { kind: 'http', from: 'handlers', to: 'gateway', label: 'charge(key = pay_51)', title: 'A charges the card', set: { kv: { 'Card charged': '1 ×' } } },
+        { kind: 'http', back: true, from: 'gateway', to: 'handlers', label: 'evt_7Q2', title: 'Gateway returns event evt_7Q2' },
+        { kind: 'sql', from: 'handlers', to: 'pg', label: 'record evt_7Q2', title: 'A records the payment', code: "INSERT INTO payment_events (provider_event_id) VALUES ('evt_7Q2');  -- 1 row\nUPDATE payments SET status = 'CAPTURED'; UPDATE orders SET status = 'CONFIRMED'; COMMIT;", set: { order: 'CONFIRMED', payment: 'CAPTURED' } },
+        { kind: 'error', from: 'loop', to: 'loop', label: '💥 process killed', title: 'A dies before "mark DONE"',
+          body: '<p>The acceptance test uses a fault hook that throws exactly here: after the external call, before acknowledgement. The job is still PROCESSING with a lease.</p>', set: { kv: { 'Worker A': 'dead' } } },
+        { kind: 'job', from: 'workerB', to: 'outbox', label: '30 s later: lease expired', title: 'B reclaims the job',
+          body: '<p>The claim query also accepts PROCESSING jobs whose <code>lease_expires_at</code> is in the past. (The test expires the lease in SQL instead of waiting.) A crashed job that has already used all 8 attempts goes to FAILED instead: a payload that kills the worker must not be retried forever.</p><p>Marking DONE checks <code>locked_by</code> and <code>attempts</code>, so a zombie Worker A that wakes up later cannot overwrite B\'s result.</p>',
+          code: "… WHERE (status = 'PENDING' AND available_at <= now())\n     OR (status = 'PROCESSING' AND lease_expires_at < now() AND attempts < max_attempts) …", set: { jobs: { 'payment.authorize': 'PROCESSING (B)' }, kv: { Attempts: '2' } } },
+        { kind: 'http', from: 'workerB', to: 'gateway', label: 'charge(key = pay_51) again', title: 'B calls the gateway with the same key',
+          body: '<p>Same idempotency key → the gateway does not charge again; it returns the original event.</p>', set: { kv: { 'Card charged': '1 × (not 2)' } } },
+        { kind: 'http', back: true, from: 'gateway', to: 'workerB', label: 'evt_7Q2 (same)', title: 'Same provider event id' },
+        { kind: 'sql', from: 'workerB', to: 'pg', label: 'ON CONFLICT → 0 rows', title: 'Duplicate: no effect', code: "INSERT INTO payment_events (provider_event_id) VALUES ('evt_7Q2') ON CONFLICT DO NOTHING;  -- 0 rows → return" },
+        { kind: 'job', from: 'workerB', to: 'outbox', label: 'mark DONE', title: 'Final state identical to a run without the crash', set: { jobs: { 'payment.authorize': 'DONE' } } },
+      ],
+      try: pre('make test-scenario VARIANT=express S=S7'),
+    },
+    {
+      id: 'retry', title: 'Retries, backoff and FAILED jobs', role: 'System + Admin', tests: ['S13', 'worker.test.ts', 'retry tests'],
+      summary: 'Elasticsearch is down. Search jobs fail with a RETRYABLE error and back off; checkout is unaffected. A job with a PERMANENT error goes to FAILED, and the admin retries it after the fix.',
+      init: { jobs: { 'search.product_changed #1': 'PENDING', 'search.product_changed #2': 'PENDING' }, kv: { Elasticsearch: 'down', Checkout: 'works' } },
+      steps: [
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'claim #1', title: 'Claim a search job', set: { jobs: { 'search.product_changed #1': 'PROCESSING' } } },
+        { kind: 'error', from: 'handlers', to: 'es', label: 'ECONNREFUSED', title: 'Elasticsearch is unreachable' },
+        { kind: 'internal', from: 'loop', to: 'domain', label: 'classifyError → RETRYABLE', title: 'Decide: retry later',
+          body: '<p>Connection errors, timeouts, HTTP 408/429/502/503/504 and PostgreSQL deadlock / serialization failures are RETRYABLE. Next attempt after ≈ 500 ms × 2^attempts with jitter, capped at 60 s, at most 8 attempts.</p>',
+          code: "UPDATE outbox_events SET status = 'PENDING', available_at = now() + backoff(attempts), last_error = 'ECONNREFUSED'", set: { jobs: { 'search.product_changed #1': 'PENDING (retry in 1 s)' } } },
+        { kind: 'internal', from: 'api', to: 'ops', label: 'meanwhile: checkout', title: 'Checkout does not care',
+          body: '<p>Checkout reads stock and prices from PostgreSQL only. Search returns <code>SEARCH_UNAVAILABLE</code>; product pages and orders keep working (scenario S13).</p>' },
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'claim #1 (attempt 2…n)', title: 'Retried until Elasticsearch is back', set: { kv: { Elasticsearch: 'up again' } } },
+        { kind: 'http', from: 'handlers', to: 'es', label: 'index ✓', title: 'Indexed', set: { jobs: { 'search.product_changed #1': 'DONE' } } },
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'claim #2', title: 'Another job, a different failure', set: { jobs: { 'search.product_changed #2': 'PROCESSING' } } },
+        { kind: 'error', from: 'handlers', to: 'es', label: '400 mapper_parsing_exception', title: 'Elasticsearch rejects the document' },
+        { kind: 'internal', from: 'loop', to: 'domain', label: 'classifyError → PERMANENT', title: 'Retrying will not help',
+          body: '<p>Anything not known to be retryable (here a 400) is PERMANENT: the job goes straight to FAILED with the error text, instead of burning 8 attempts.</p>', set: { jobs: { 'search.product_changed #2': 'FAILED' } } },
+        { kind: 'ui', from: 'admin', to: 'api', label: 'Admin clicks Retry', title: 'A human fixes the cause, then retries',
+          body: '<p>The admin dashboard lists FAILED jobs with their last error. <code>retryJob</code> (or <code>ofl retry-jobs --all-failed</code>) moves them back to PENDING with a fresh attempt budget, and writes an audit row.</p>', set: { ui: 'Failed jobs (1) · search.product_changed · <code>mapper_parsing_exception</code> <b>[Retry]</b>' } },
+        { kind: 'sql', from: 'ops', to: 'outbox', label: 'FAILED → PENDING', title: 'retryJob()', set: { jobs: { 'search.product_changed #2': 'PENDING' } } },
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'claim + index ✓', title: 'Processed', set: { jobs: { 'search.product_changed #2': 'DONE' }, ui: 'Failed jobs (0)' } },
+      ],
+      try: `<p>Stop Elasticsearch, click around, start it again:</p>${pre('make infra-down     # search now answers SEARCH_UNAVAILABLE; checkout still works\nmake infra-up\ncd implementations/express && pnpm exec ofl jobs   # list FAILED jobs')}`,
+    },
+    {
+      id: 'versioning', title: 'Out-of-order search events (S8)', role: 'System', tests: ['S8', 'search.test.ts', 'ADR 0003'],
+      summary: 'Two workers index the same product. The one that read older data finishes last. External versioning makes Elasticsearch reject the stale write.',
+      init: { kv: { 'Product price': '$89 (v118)', 'Search doc': 'v118 $89' }, jobs: { 'search #A (price $85)': 'PENDING', 'search #B (price $79)': 'PENDING' } },
+      steps: [
+        { kind: 'sql', from: 'ops', to: 'pg', label: 'price → $85 (v119)', title: 'First change commits', set: { kv: { 'Product price': '$85 (v119)' } } },
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'A claims job #A', title: 'Worker A starts', set: { jobs: { 'search #A (price $85)': 'PROCESSING' } } },
+        { kind: 'sql', from: 'handlers', to: 'pg', label: 'A reads v119 ($85)', title: 'A reads the product', body: '<p>Version = products.version + Σ skus.version + Σ inventory_balances.version. Counters only increase, so a later committed state always has a version ≥ an earlier one.</p>' },
+        { kind: 'internal', from: 'handlers', to: 'handlers', label: 'A is paused (GC, slow network)', title: 'A stalls before writing' },
+        { kind: 'sql', from: 'ops', to: 'pg', label: 'price → $79 (v120)', title: 'Second change commits', set: { kv: { 'Product price': '$79 (v120)' } } },
+        { kind: 'job', from: 'workerB', to: 'outbox', label: 'B claims job #B', title: 'Worker B handles the newer event', set: { jobs: { 'search #B (price $79)': 'PROCESSING' } } },
+        { kind: 'http', from: 'workerB', to: 'es', label: 'index v120 ($79)', title: 'B writes first', code: 'PUT /ofl_express_products/_doc/p1?version=120&version_type=external_gte', set: { kv: { 'Search doc': 'v120 $79' }, jobs: { 'search #B (price $79)': 'DONE' } } },
+        { kind: 'error', from: 'handlers', to: 'es', label: 'index v119 ($85)', title: 'A finally writes its stale copy', code: 'PUT …?version=119&version_type=external_gte\n→ 409 version_conflict_engine_exception' },
+        { kind: 'job', from: 'loop', to: 'outbox', label: '409 = success', title: 'A treats 409 as done',
+          body: '<p>A newer or equal version is already indexed, which is exactly the goal. Without versioning, the index would now show $85 while the database says $79.</p>', set: { jobs: { 'search #A (price $85)': 'DONE (409)' } } },
+      ],
+      try: pre('make test-scenario VARIANT=fastify S=S8'),
+    },
+    {
+      id: 'sweeper', title: 'Lost expiry job → sweeper', role: 'System', tests: ['payments.test.ts'],
+      summary: 'Defense in depth: if a reservation.expire job was lost or delayed, the sweeper finds ACTIVE reservations past their expiry and enqueues the job again.',
+      init: { order: 'PENDING_PAYMENT', stock: { 'TR-42 @ WH-EAST': [3, 3] }, jobs: {} , kv: { 'Reservation': 'ACTIVE, expired 2 min ago' } },
+      steps: [
+        { kind: 'sql', from: 'sweeper', to: 'pg', label: 'find overdue holds', title: 'Sweeper scans', code: "SELECT DISTINCT order_id FROM reservations\nWHERE status = 'ACTIVE' AND expires_at < now();" },
+        { kind: 'sql', from: 'sweeper', to: 'outbox', label: 'enqueue reservation.expire', title: 'Re-enqueue', body: '<p>Enqueuing a duplicate is harmless: the expiry handler is idempotent.</p>', set: { jobs: { 'reservation.expire': 'PENDING' } } },
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'claim', title: 'Worker claims it', set: { jobs: { 'reservation.expire': 'PROCESSING' } } },
+        { kind: 'sql', from: 'handlers', to: 'pg', label: 'lock order, release', title: 'Expire under the order lock', code: "SELECT … FROM orders WHERE id = $1 FOR UPDATE;   -- still PENDING_PAYMENT, past expiry\nUPDATE reservations SET status = 'RELEASED'; INSERT … 'RELEASE' movement (0, -3);\nUPDATE orders SET status = 'CANCELLED', cancel_reason = 'RESERVATION_EXPIRED';\nSELECT pg_notify('order_events', $1); COMMIT;", set: { order: 'CANCELLED', stock: { 'TR-42 @ WH-EAST': [3, 0] }, kv: { Reservation: 'RELEASED' } } },
+        { kind: 'notify', from: 'pg', to: 'hub', label: 'NOTIFY', title: 'Customer\'s page updates', set: { ui: 'Order ORD-1042 · CANCELLED · the hold expired' } },
+        { kind: 'job', from: 'loop', to: 'outbox', label: 'DONE', title: 'Done', set: { jobs: { 'reservation.expire': 'DONE' } } },
+      ],
+    },
+    {
+      id: 'reconcile', title: 'Ledger reconcile (ofl reconcile)', role: 'Operator', tests: ['every acceptance scenario', 'db.test.ts'],
+      summary: 'Balances are a cache of the append-only movement ledger. The reconcile command proves they agree; the acceptance suite runs the same check after every scenario.',
+      init: { stock: { 'TR-42 @ WH-EAST': [1, 0], 'TR-42 @ WH-WEST': [2, 0] }, kv: { Differences: '?' } },
+      steps: [
+        { kind: 'ui', from: 'cli', to: 'cli', label: 'pnpm exec ofl reconcile', title: 'Run the CLI in a variant folder', code: 'cd implementations/express && pnpm exec ofl reconcile' },
+        { kind: 'sql', from: 'cli', to: 'pg', label: 'compare balances vs Σ movements', title: 'One query per field',
+          body: '<p>Example ledger for TR-42 @ WH-EAST: RECEIPT +10, RESERVE +3/0… the movements always sum to the stored balance because every balance change writes its movement in the same transaction, and each movement kind has a fixed sign pattern (CHECK constraint).</p>',
+          code: "SELECT b.sku_id, b.warehouse_id, b.on_hand, sum(m.on_hand_delta) AS ledger\nFROM inventory_balances b JOIN inventory_movements m USING (sku_id, warehouse_id)\nGROUP BY 1, 2, 3 HAVING b.on_hand <> sum(m.on_hand_delta);   -- and the same for reserved" },
+        { kind: 'sql', back: true, from: 'pg', to: 'cli', label: '0 rows', title: '0 differences', set: { kv: { Differences: '0' }, ui: '<code>{ "differences": [] }</code>' } },
+      ],
+      try: pre('cd implementations/express && pnpm exec ofl reconcile'),
+    },
+    {
+      id: 'reindex', title: 'Rebuild the search index, no downtime', role: 'Operator', tests: ['search.test.ts'],
+      summary: 'ofl reindex builds a fresh index while the old one keeps serving, double-writes changes during the build, then switches the alias atomically.',
+      init: { kv: { 'Alias points to': 'products_1732', 'Building index': '—' } },
+      steps: [
+        { kind: 'ui', from: 'cli', to: 'cli', label: 'pnpm exec ofl reindex', title: 'Start a rebuild' },
+        { kind: 'http', from: 'cli', to: 'es', label: 'create products_1741', title: 'Create a new concrete index with the current mapping' },
+        { kind: 'sql', from: 'cli', to: 'pg', label: 'building_index = products_1741', title: 'Record the rebuild', body: '<p>From now on the indexer writes every change to <b>both</b> the active and the building index, so nothing changed during the bulk load is lost.</p>', set: { kv: { 'Building index': 'products_1741' } } },
+        { kind: 'http', count: 8, from: 'cli', to: 'es', label: 'bulk load all products', title: 'Bulk load from PostgreSQL' },
+        { kind: 'http', from: 'handlers', to: 'es', label: 'live change → both indexes', title: 'A price change during the build', body: '<p>Written to both indexes with external versions, so the bulk load cannot overwrite it with older data.</p>' },
+        { kind: 'http', from: 'cli', to: 'es', label: 'atomic alias switch', title: 'Swap the alias in one request', code: 'POST /_aliases\n{ "actions": [ { "remove": { "index": "ofl_express_products_1732", "alias": "ofl_express_products" } },\n               { "add":    { "index": "ofl_express_products_1741", "alias": "ofl_express_products" } } ] }', set: { kv: { 'Alias points to': 'products_1741' } } },
+        { kind: 'sql', from: 'cli', to: 'pg', label: 'clear building_index', title: 'Done', set: { kv: { 'Building index': '—' } } },
+      ],
+      try: pre('cd implementations/express && pnpm exec ofl reindex'),
+    },
+  ];
+
+  OFL.mount({
+    page: 'core.html',
+    title: 'Shared core, outbox and worker',
+    intro: 'What all three variants share: <code>@ofl/server-core</code> (operations, outbox, worker, search, realtime, CLI) and <code>@ofl/domain</code> (pure rules). These scenarios look inside the background machinery — crash recovery, retries, out-of-order events, and operations commands.',
+    chips: ['packages/server-core', 'packages/domain', '112 integration tests', '53 unit tests', 'make test-packages'],
+    viewBox: [1120, 680], defaultUrl: 'admin dashboard',
+    groups: [
+      { label: 'API PROCESS (ANY VARIANT)', x: 14, y: 270, w: 452, h: 330 },
+      { label: 'POSTGRESQL', x: 478, y: 14, w: 274, h: 310 },
+      { label: 'WORKER PROCESSES', x: 784, y: 14, w: 322, h: 384 },
+    ],
+    nodes,
+    links: [['api', 'ops'], ['ops', 'domain'], ['ops', 'pg'], ['ops', 'outbox'], ['loop', 'outbox'], ['loop', 'handlers'], ['handlers', 'gateway'], ['handlers', 'es'], ['handlers', 'pg'], ['sweeper', 'outbox'], ['workerB', 'outbox'], ['pg', 'hub'], ['admin', 'api'], ['cli', 'pg']],
+    scenarios,
+  });
+})();
+</script>
+</body>
+</html>

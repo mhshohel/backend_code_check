@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Express Variant Explorer</title>
+<link rel="stylesheet" href="assets/engine.css">
+</head>
+<body>
+<script src="assets/engine.js"></script>
+<script src="assets/scenarios.js"></script>
+<script>
+(function () {
+  const X = 215, W = 340;
+  const variant = [
+    { id: 'browser', label: 'React SPA', sub: 'Vite dev :9002 → proxy :9001\nReact Router · Redux · urql', x: 20, y: 230, w: 160, h: 120, type: 'ui',
+      info: { does: '<p>The shared SPA from <code>packages/web-spa</code>, mounted by <code>implementations/express/web</code>. React Router for pages, Redux Toolkit for the cart, urql for GraphQL (HTTP + graphql-ws). In dev, Vite on :9002 proxies <code>/graphql</code>, <code>/auth</code> and WebSocket upgrades to the API on :9001; in production the API serves the built files itself.</p><p>Express and Fastify share this SPA because their browser code would be identical (ADR 0004).</p>', file: ['packages/web-spa/src/', 'implementations/express/web/'], tests: 'packages/web-spa/tests/ (32 tests)' } },
+    { id: 'corr', label: 'correlationId', sub: 'app.use #1', x: X, y: 48, w: W, h: 46, type: 'server',
+      at: { default: '<p>Reads <code>x-correlation-id</code> if it is a valid id, otherwise generates one, and echoes it on the response. It travels into every log line, audit row and outbox event, so one click can be traced through the worker. It is first because everything after it may log.</p>' },
+      info: { does: '<p>First middleware: assigns the correlation id.</p>', file: 'implementations/express/api/middleware/correlation.ts' } },
+    { id: 'metrics', label: 'httpMetrics', sub: 'app.use #2 · Prometheus histogram', x: X, y: 104, w: W, h: 46, type: 'server',
+      at: { default: '<p>Starts a timer and, when the response finishes, records method, route, status and duration. It sits second so it measures everything below it, including rejections by later middleware.</p>' },
+      info: { does: '<p>Request duration histogram, exposed on <code>/metrics</code>.</p>', file: 'implementations/express/api/middleware/http-metrics.ts' } },
+    { id: 'sec', label: 'helmet + CORS allowlist', sub: 'app.use #3–4', x: X, y: 160, w: W, h: 46, type: 'server',
+      at: { default: '<p>Helmet sets security headers. CORS allows only the web origin with credentials and answers preflights here, before any work. Yoga\'s built-in CORS is <b>disabled</b>: when the <code>cors</code> package rejected an origin it just called <code>next()</code>, and Yoga then echoed any origin. A test covers it.</p>',
+        webhook: '<p>The provider is a server, so there is no <code>Origin</code> header and CORS does not apply. Helmet headers are still set.</p>' },
+      info: { does: '<p>Security headers and the CORS allowlist.</p>', file: 'implementations/express/api/middleware/security.ts' } },
+    { id: 'health', label: 'health routes', sub: '/health/live · /health/ready · /metrics', x: X, y: 216, w: W, h: 46, type: 'server',
+      info: { does: '<p>Mounted before sessions and rate limits: probes must never be throttled or need a cookie. <code>/health/ready</code> checks PostgreSQL and Elasticsearch with latencies.</p><p>Known limit: <code>/metrics</code> is not authenticated; expose it only internally.</p>', file: 'implementations/express/api/routes/health.ts' } },
+    { id: 'webhook', label: '/webhooks router', sub: 'express.raw() · 120/min · HMAC', x: X, y: 272, w: W, h: 46, type: 'server',
+      at: { webhook: '<p>Mounted <b>before</b> cookie and session middleware, so a cookie can never authenticate a webhook. <code>express.raw({ type: "application/json" })</code> keeps the exact bytes, because the HMAC is computed over them. Then it calls <code>handlePaymentWebhook(services, rawBody, req.get("x-ofl-signature"), meta)</code> and sends its status and body.</p>' },
+      info: { does: '<p>The only route authenticated by signature instead of session.</p>', file: 'implementations/express/api/routes/webhooks.ts' } },
+    { id: 'session', label: 'cookieParser + session', sub: "app.use(['/auth', '/graphql'])", x: X, y: 328, w: W, h: 46, type: 'server',
+      at: { default: '<p>Only for <code>/auth</code> and <code>/graphql</code>. Parses cookies and calls <code>resolveSession(services, token)</code>: SHA-256 the token, look it up in <code>sessions</code>, check expiry. Sets <code>req.viewer</code> (null when anonymous). Authorization decisions happen later, in server-core.</p>' },
+      info: { does: '<p>Resolves the viewer once per request.</p>', file: 'implementations/express/api/middleware/session.ts' } },
+    { id: 'auth', label: '/auth router', sub: 'login 10/min · CSRF · JSON 100 KB', x: X, y: 384, w: W, h: 46, type: 'server',
+      at: { auth: '<p>Login rate limit 10/min per IP → CSRF check (<code>x-ofl-csrf: 1</code>, else 403) → <code>express.json({ limit: "100kb" })</code> → <code>login(services, body, meta)</code>. On success it sets the cookie with <code>sessionCookieOptions(config)</code>, so all three variants use identical flags.</p>' },
+      info: { does: '<p>POST /auth/login, POST /auth/logout.</p>', file: ['implementations/express/api/routes/auth.ts', 'implementations/express/api/middleware/csrf.ts', 'implementations/express/api/middleware/rate-limits.ts'] } },
+    { id: 'graphql', label: '/graphql (GraphQL Yoga)', sub: '300/min · CSRF · yoga(req, res)', x: X, y: 440, w: W, h: 46, type: 'server',
+      at: { graphql: '<p>Rate limit 300/min → CSRF header → JSON body limit → <code>yoga(req, res, { req, res })</code> with <code>createGraphQLContext(services, req.viewer, meta)</code> (fresh DataLoaders per request).</p><p>Integration lesson: <code>handleNodeRequestAndResponse</code> only <i>returns</i> a Response; in Express the request hung. Calling Yoga as middleware writes the response.</p>' },
+      info: { does: '<p>GraphQL over HTTP.</p>', file: 'implementations/express/api/routes/graphql.ts' } },
+    { id: 'static', label: 'static SPA → 404 → errorHandler', sub: 'production build only', x: X, y: 496, w: W, h: 46, type: 'server',
+      info: { does: '<p>After <code>make express-start</code>, the API serves the built SPA. Then a JSON 404, then the error handler last (Express recognizes it by its four arguments). Errors are masked: clients get a code and the correlation id, never a stack trace.</p>', file: ['implementations/express/api/routes/static.ts', 'implementations/express/api/middleware/errors.ts'] } },
+    { id: 'ws', label: 'ws server (graphql-ws)', sub: "server.on('upgrade') · same port 9001", x: X, y: 592, w: W, h: 50, type: 'server',
+      at: { ws: '<p>A WebSocket upgrade does <b>not</b> pass through the Express middleware chain: the <code>ws</code> server listens to the HTTP server\'s <code>upgrade</code> event. So it repeats the checks itself: Origin allowlist (missing Origin is allowed for non-browser clients), then the <code>ofl_session</code> cookie via <code>resolveSession</code>. graphql-ws then runs the subscription on the shared schema.</p>' },
+      info: { does: '<p>Subscriptions on the same HTTP server. Shutdown disposes it before closing services.</p>', file: ['implementations/express/api/websocket.ts', 'implementations/express/api/shutdown.ts'] } },
+  ];
+  const nodes = [...OFL.sharedNodes(), ...variant];
+  const P = {
+    id: 'express', name: 'Express', api: 'http://localhost:9001', web: 'http://localhost:9002', wsUrl: 'ws://localhost:9001/graphql',
+    esPrefix: 'ofl_express_', db: 'ofl_express',
+    paths: { graphql: '/graphql', login: '/auth/login', webhook: '/webhooks/payments' },
+    route: {
+      graphql: ['corr', 'metrics', 'sec', 'session', 'graphql'],
+      auth: ['corr', 'metrics', 'sec', 'session', 'auth'],
+      webhook: ['corr', 'metrics', 'sec', 'webhook'],
+      ws: ['ws'],
+    },
+    uiLogin: 'auth', uiSearch: 'graphql', uiPrice: 'graphql',
+    webhookSummary: 'In Express the webhook router is mounted before the session middleware and uses express.raw(), so the signature covers the exact bytes and no cookie is ever considered.',
+    nodeMap: Object.fromEntries(nodes.map((n) => [n.id, n])),
+  };
+  OFL.mount({
+    page: 'express.html',
+    title: 'Express 5 variant',
+    intro: 'An ordered middleware chain. In <code>api/app.ts</code> the order of <code>app.use</code> calls <i>is</i> the security model: the webhook is mounted before cookies are parsed, health checks before rate limits. Pick a scenario on the left and press Play to watch a request travel through each middleware into the shared application layer.',
+    chips: ['API :9001', 'Web (Vite) :9002', 'Worker health :9004', 'DB ofl_express', 'make express-dev', 'make express-test → 30 tests'],
+    viewBox: [1120, 680], defaultUrl: P.web,
+    groups: [
+      { label: 'EXPRESS PROCESS :9001 (app.use order ↓)', x: 200, y: 14, w: 370, h: 652 },
+      { label: '@OFL/SERVER-CORE (same process)', x: 590, y: 14, w: 220, h: 420 },
+    ],
+    nodes,
+    links: [...OFL.sharedLinks, ['browser', 'corr'], ['provider', 'corr'], ['corr', 'metrics'], ['metrics', 'sec'], ['sec', 'health'], ['health', 'webhook'], ['webhook', 'session'], ['session', 'auth'], ['auth', 'graphql'], ['graphql', 'static'], ['browser', 'ws'], ['graphql', 'core-gql'], ['webhook', 'core-ops'], ['ws', 'hub']],
+    scenarios: OFL.buildScenarios(P),
+  });
+})();
+</script>
+</body>
+</html>
